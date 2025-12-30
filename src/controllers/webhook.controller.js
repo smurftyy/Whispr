@@ -29,12 +29,16 @@ class WebhookController {
   
   async processMessage(phoneNumber, messageText, messageId) {
     try {
+      // Normalize phone number - Twilio sends it as whatsapp:+1234567890
+      const normalizedPhone = phoneNumber;
+      
       // Get or create user
-      let user = await User.findOne({ phoneNumber });
+      let user = await User.findOne({ phoneNumber: normalizedPhone });
       if (!user) {
-        user = await User.create({ phoneNumber });
+        user = await User.create({ phoneNumber: normalizedPhone });
+        logger.info(`New user created: ${normalizedPhone}`);
         await notifierService.send(
-          phoneNumber,
+          normalizedPhone,
           '👋 Welcome to Whispr!\n\nForward me your academic messages and I\'ll remind you before deadlines.\n\nCommands:\n/list - View reminders\n/help - Get help'
         );
         return;
@@ -121,16 +125,16 @@ class WebhookController {
     if (reminders.length === 0) {
       return await notifierService.send(
         phoneNumber,
-        ' No active reminders.\n\nForward me messages to create reminders!'
+        '📭 No active reminders.\n\nForward me messages to create reminders!'
       );
     }
     
-    let response = ` Your Reminders (${reminders.length})\n\n`;
+    let response = `📋 Your Reminders (${reminders.length})\n\n`;
     
     reminders.forEach((r, i) => {
       const deadline = new Date(r.extracted.deadline);
       response += `${i + 1}. ${r.extracted.task}\n`;
-      response += `    ${deadline.toLocaleDateString()}\n`;
+      response += `   ⏰ ${deadline.toLocaleDateString()}\n`;
       response += `   ID: ${r._id.toString().slice(-6)}\n\n`;
     });
     
@@ -154,7 +158,7 @@ class WebhookController {
       if (!reminder) {
         return await notifierService.send(
           phoneNumber,
-          ' Reminder not found. Use /list to see IDs.'
+          '❌ Reminder not found. Use /list to see IDs.'
         );
       }
       
@@ -163,14 +167,14 @@ class WebhookController {
       
       await notifierService.send(
         phoneNumber,
-        ' Reminder deleted!'
+        '✅ Reminder deleted!'
       );
       
     } catch (error) {
       logger.error('Delete error:', error);
       await notifierService.send(
         phoneNumber,
-        ' Error deleting reminder.'
+        '❌ Error deleting reminder.'
       );
     }
   }
