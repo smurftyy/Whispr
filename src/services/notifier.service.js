@@ -5,8 +5,18 @@ const logger = require('../utils/logger');
 class NotifierService {
   async send(to, message) {
     try {
-      // Ensure 'to' has whatsapp: prefix
-      const formattedTo = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+      
+      let formattedTo = to;
+      
+      
+      if (to.startsWith('whatsapp:')) {
+        formattedTo = to;
+      } else {
+        
+        formattedTo = to.startsWith('+') ? `whatsapp:${to}` : `whatsapp:+${to}`;
+      }
+      
+      logger.info(`Sending message to: ${formattedTo}`);
       
       const result = await twilioClient.messages.create({
         body: message,
@@ -14,11 +24,11 @@ class NotifierService {
         to: formattedTo,
       });
       
-      logger.info(`Message sent to ${to}: ${result.sid}`);
+      logger.info(`Message sent successfully: ${result.sid}`);
       return result;
       
     } catch (error) {
-      logger.error(`Failed to send message to ${to}:`, error);
+      logger.error(`Failed to send message to ${to}:`, error.message);
       throw error;
     }
   }
@@ -26,10 +36,10 @@ class NotifierService {
   async sendReminder(reminder, user) {
     const deadline = new Date(reminder.extracted.deadline);
     
-    const message = ` Reminder!\n\n` +
-      ` ${reminder.extracted.task}\n` +
-      `${reminder.extracted.course ? ` ${reminder.extracted.course}\n` : ''}` +
-      ` Due: ${deadline.toLocaleString('en-US', { timeZone: user.timezone })}\n\n` +
+    const message = `🔔 Reminder!\n\n` +
+      `📝 ${reminder.extracted.task}\n` +
+      `${reminder.extracted.course ? `📚 ${reminder.extracted.course}\n` : ''}` +
+      `⏰ Due: ${deadline.toLocaleString('en-US', { timeZone: user.timezone })}\n\n` +
       `${reminder.extracted.notes || ''}`;
     
     return await this.send(user.phoneNumber, message);
