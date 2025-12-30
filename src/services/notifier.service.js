@@ -5,16 +5,16 @@ const logger = require('../utils/logger');
 class NotifierService {
   async send(to, message) {
     try {
-      // Format phone number correctly for Twilio
+      
       let formattedTo = to;
       
-      // Remove whatsapp: prefix temporarily to work with the number
+      
       const phoneOnly = to.replace('whatsapp:', '');
       
       // Ensure the number has a + prefix
       const phoneWithPlus = phoneOnly.startsWith('+') ? phoneOnly : `+${phoneOnly}`;
       
-      // Add whatsapp: prefix back
+      
       formattedTo = `whatsapp:${phoneWithPlus}`;
       
       logger.info(`Sending message to: ${formattedTo}`);
