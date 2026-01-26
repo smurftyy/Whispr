@@ -1,7 +1,6 @@
 // src/app.js - Express Application
 const express = require('express');
 const bodyParser = require('body-parser');
-const webhookRoutes = require('./routes/webhook.routes');
 const logger = require('./utils/logger');
 
 const app = express();
@@ -18,15 +17,17 @@ app.use((req, res, next) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  res.json({
+    status: 'healthy',
     service: 'whispr',
     timestamp: new Date().toISOString()
   });
 });
 
 // Routes
-app.use('/webhook', webhookRoutes);
+app.get('/', (req, res) => {
+  res.send('Whispr Backend with Baileys Adapter');
+});
 
 // 404 handler
 app.use((req, res) => {
@@ -36,7 +37,7 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   logger.error('Error:', err);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
