@@ -26,6 +26,16 @@ const userSchema = new mongoose.Schema({
       end: { type: Number, default: 7 },    // 7 AM
     },
   },
+  conversationState: {
+    type: String,
+    enum: ['IDLE', 'CONFIRM_DETAILS', 'SELECT_FREQUENCY', 'SELECT_TIMING'],
+    default: 'IDLE',
+  },
+  draftReminderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Reminder',
+    default: null,
+  },
   isActive: {
     type: Boolean,
     default: true,
@@ -41,7 +51,7 @@ const userSchema = new mongoose.Schema({
 });
 
 // Update lastActive on any interaction
-userSchema.methods.updateActivity = function() {
+userSchema.methods.updateActivity = function () {
   this.lastActive = new Date();
   return this.save();
 };

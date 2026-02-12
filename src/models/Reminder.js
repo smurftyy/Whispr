@@ -33,12 +33,26 @@ const reminderSchema = new mongoose.Schema({
     },
     location: String,
     notes: String,
+    urgency: {
+      type: String,
+      enum: ['low', 'medium', 'high'],
+      default: 'medium',
+    },
   },
   status: {
     type: String,
-    enum: ['pending', 'sent', 'completed', 'cancelled'],
-    default: 'pending',
+    enum: ['draft', 'active', 'pending', 'sent', 'completed', 'cancelled'],
+    default: 'active',
     index: true,
+  },
+  frequency: {
+    type: String,
+    enum: ['once', 'daily', 'weekly'],
+    default: 'once',
+  },
+  notificationTiming: {
+    type: [Number], // minutes before due
+    default: [1440, 60], // 24h, 1h
   },
   scheduledReminders: [{
     scheduledFor: Date,
@@ -56,13 +70,13 @@ const reminderSchema = new mongoose.Schema({
 });
 
 // Update timestamp on save
-reminderSchema.pre('save', function(next) {
+reminderSchema.pre('save', function (next) {
   this.updatedAt = new Date();
   next();
 });
 
 // Find active reminders
-reminderSchema.statics.findActive = function(userId) {
+reminderSchema.statics.findActive = function (userId) {
   return this.find({
     userId,
     status: { $in: ['pending', 'sent'] },

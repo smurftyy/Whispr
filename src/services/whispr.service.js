@@ -16,6 +16,7 @@ Extract the following from this message:
 - course: Subject or course name (if mentioned)
 - type: One of: assignment, exam, class, deadline, event, other
 - deadline: The due date/time (extract any date/time mentioned)
+- urgency: One of: low, medium, high (infer based on language like "important", "urgent", "ASAP" or proximity)
 - location: Physical or virtual location (if mentioned)
 - notes: Any additional important details
 
@@ -27,6 +28,7 @@ Respond ONLY with valid JSON in this exact format:
   "course": "string or null",
   "type": "assignment|exam|class|deadline|event|other",
   "deadline": "ISO 8601 date string or null",
+  "urgency": "low|medium|high",
   "location": "string or null",
   "notes": "string or null"
 }`;
@@ -34,7 +36,7 @@ Respond ONLY with valid JSON in this exact format:
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
-      
+
       // Extract JSON from response (handle markdown code blocks)
       let jsonText = text.trim();
       if (jsonText.startsWith('```json')) {
@@ -42,46 +44,47 @@ Respond ONLY with valid JSON in this exact format:
       } else if (jsonText.startsWith('```')) {
         jsonText = jsonText.replace(/```\n?/g, '');
       }
-      
+
       const extracted = JSON.parse(jsonText);
-      
+
       // Parse deadline with chrono-node if Gemini didn't provide ISO format
       if (extracted.deadline && !this.isValidDate(extracted.deadline)) {
         const parsed = chrono.parseDate(extracted.deadline, new Date(), { forwardDate: true });
         extracted.deadline = parsed ? parsed.toISOString() : null;
       }
-      
+
       // If no deadline extracted by AI, try chrono-node on original message
       if (!extracted.deadline) {
         const parsed = chrono.parseDate(messageText, new Date(), { forwardDate: true });
         extracted.deadline = parsed ? parsed.toISOString() : null;
       }
-      
+
       logger.info('Extraction successful:', JSON.stringify(extracted, null, 2));
       return extracted;
-      
+
     } catch (error) {
       logger.error('Extraction error:', error);
-      
+
       // Fallback: basic extraction
       return this.fallbackExtraction(messageText);
     }
   }
-  
+
   isValidDate(dateString) {
     const date = new Date(dateString);
     return date instanceof Date && !isNaN(date);
   }
-  
+
   fallbackExtraction(messageText) {
     // Simple fallback if AI fails
     const parsed = chrono.parseDate(messageText, new Date(), { forwardDate: true });
-    
+
     return {
       task: messageText.substring(0, 100),
       course: null,
       type: 'other',
       deadline: parsed ? parsed.toISOString() : null,
+      urgency: 'medium',
       location: null,
       notes: null,
     };
