@@ -1,101 +1,99 @@
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const MessagingProvider = require('../interfaces/messaging.provider');
 const logger = require('../utils/logger');
-const qrcode = require('qrcode-terminal');
-const path = require('path');
-const fs = require('fs');
+const WhatsAppAdapter = require('../adapters/whatsapp.adapter');
 
+/**
+ * BaileysService implements the MessagingProvider interface using WhatsAppAdapter.
+ * It handles high-level application logic like number normalization and 
+ * serves as the bridge between the low-level adapter and the application.
+ */
 class BaileysService extends MessagingProvider {
     constructor() {
         super();
-        this.sock = null;
+        this.adapter = new WhatsAppAdapter();
         this.messageHandler = null;
-        this.authDir = path.resolve(__dirname, '../../auth_info_baileys');
-
-        // Create auth directory if it doesn't exist
-        if (!fs.existsSync(this.authDir)) {
-            fs.mkdirSync(this.authDir, { recursive: true });
-        }
+        this.#setupAdapter();
     }
 
+    /**
+     * Set up adapter event listeners and map them to service logic
+     */
+    #setupAdapter() {
+        // Handle incoming messages
+        this.adapter.on('message', ({ from, body, id }) => {
+            if (this.messageHandler) {
+                // Normalize '123456@s.whatsapp.net' -> '+123456'
+                const cleanNumber = from.split('@')[0];
+                const normalizedFrom = '+' + cleanNumber;
+                
+                logger.info(`BaileysService: Incoming message from ${normalizedFrom}`);
+                
+                try {
+                    this.messageHandler(normalizedFrom, body, id);
+                } catch (error) {
+                    logger.error('BaileysService: Error in message handler', error);
+                }
+            }
+        });
+
+        // Lifecycle logging
+        this.adapter.on('connected', (user) => {
+            logger.info(`✅ WhatsApp Service connected as ${user.id}`);
+        });
+
+        this.adapter.on('disconnected', ({ reason, shouldReconnect }) => {
+            logger.warn(`❌ WhatsApp Service disconnected. Reason: ${reason}. Will reconnect: ${shouldReconnect}`);
+        });
+
+        this.adapter.on('logout', () => {
+            logger.error('❌ WhatsApp Service: Logged out! Please delete auth folder and scan QR again.');
+        });
+    }
+
+    /**
+     * Start the service
+     */
     async initialize() {
-        const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
-
-        this.sock = makeWASocket({
-            auth: state,
-            printQRInTerminal: true, // Let Baileys handle QR display
-        });
-
-        this.sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qrcode: qr } = update;
-
-            // Debug log to see what's happening
-            logger.info('Connection update:', { connection, hasQr: !!qr });
-
-            if (qr) {
-                console.log('Scan this QR code:', qr);
-            }
-
-            if (connection === 'close') {
-                const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-                if (shouldReconnect) {
-                    logger.info('Connection closed due to error, reconnecting...');
-                    this.initialize();
-                } else {
-                    logger.error('Connection closed. You are logged out.');
-                }
-            } else if (connection === 'open') {
-                logger.info('✅ WhatsApp connection opened!');
-            }
-        });
-
-        this.sock.ev.on('creds.update', saveCreds);
-
-        this.sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (type !== 'notify') return;
-
-            for (const msg of messages) {
-                if (!msg.message) continue;
-                // Ignore status updates/broadcasts
-                if (msg.key.remoteJid === 'status@broadcast') continue;
-                // Ignore my own messages
-                if (msg.key.fromMe) continue;
-
-                const from = msg.key.remoteJid.replace('@s.whatsapp.net', '');
-                // Extract text body
-                const body = msg.message.conversation ||
-                    msg.message.extendedTextMessage?.text ||
-                    msg.message.imageMessage?.caption ||
-                    '';
-
-                const messageId = msg.key.id;
-
-                if (this.messageHandler && body) {
-                    // Normalize to +12345 format used in system
-                    const normalizedFrom = '+' + from;
-                    logger.info(`Incoming Baileys message from ${normalizedFrom}: ${body}`);
-                    this.messageHandler(normalizedFrom, body, messageId);
-                }
-            }
-        });
+        logger.info('Initializing BaileysService...');
+        await this.adapter.start();
     }
 
+    /**
+     * Register a callback for when a message is received
+     * @param {Function} callback - (from, body, messageId)
+     */
     onMessage(callback) {
         this.messageHandler = callback;
     }
 
+    /**
+     * Send a message to a phone number
+     * @param {string} to - Phone number (e.g. +123456)
+     * @param {string} message - Text content
+     */
     async send(to, message) {
-        if (!this.sock) {
-            throw new Error('Baileys socket not initialized');
-        }
-
         // Format 'to': System uses '+123456', Baileys needs '123456@s.whatsapp.net'
-        const cleanNumber = to.replace('+', '').replace('whatsapp:', '');
+        const cleanNumber = to.replace('+', '').replace('whatsapp:', '').trim();
         const jid = `${cleanNumber}@s.whatsapp.net`;
 
-        await this.sock.sendMessage(jid, { text: message });
-        return { sid: 'baileys-msg-id' }; // Mock return to match expected interface slightly
+        try {
+            await this.adapter.sendMessage(jid, message);
+            return { provider: 'baileys', success: true };
+        } catch (error) {
+            logger.error(`BaileysService: Failed to send message to ${to}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Stop the service (for graceful shutdown)
+     */
+    async stop() {
+        logger.info('Stopping BaileysService...');
+        await this.adapter.stop();
     }
 }
 
+// Single instance
 module.exports = new BaileysService();
+

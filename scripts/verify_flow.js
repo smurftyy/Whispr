@@ -6,10 +6,16 @@ const Reminder = require('../src/models/Reminder');
 const webhookController = require('../src/controllers/webhook.controller');
 const notifierService = require('../src/services/notifier.service');
 const whisprService = require('../src/services/whispr.service');
+const schedulerService = require('../src/services/scheduler.service');
 
 // Mock Services
 const mockSend = async (to, msg) => {
     console.log(`\n🤖 [Bot -> ${to}]:\n${msg}\n`);
+};
+
+schedulerService.scheduleReminder = async (reminder, user) => {
+    console.log('⏰ [Mock Scheduler] Scheduled reminder:', reminder._id);
+    return 1;
 };
 
 const mockExtract = async (text) => {
@@ -83,6 +89,7 @@ const runVerification = async () => {
         console.error('❌ Verification Failed:', error);
     } finally {
         await mongoose.disconnect();
+        process.exit(0);
     }
 };
 

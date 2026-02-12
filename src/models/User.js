@@ -1,6 +1,8 @@
 // src/models/User.js - User Schema
 const mongoose = require('mongoose');
 
+const { CONVERSATION_STATES } = require('../constants');
+
 const userSchema = new mongoose.Schema({
   phoneNumber: {
     type: String,
@@ -28,8 +30,8 @@ const userSchema = new mongoose.Schema({
   },
   conversationState: {
     type: String,
-    enum: ['IDLE', 'CONFIRM_DETAILS', 'SELECT_FREQUENCY', 'SELECT_TIMING'],
-    default: 'IDLE',
+    enum: Object.values(CONVERSATION_STATES),
+    default: CONVERSATION_STATES.IDLE,
   },
   draftReminderId: {
     type: mongoose.Schema.Types.ObjectId,

@@ -5,7 +5,14 @@ const whisprService = require('../services/whispr.service');
 const notifierService = require('../services/notifier.service');
 const schedulerService = require('../services/scheduler.service');
 const logger = require('../utils/logger');
-
+const { 
+  CONVERSATION_STATES, 
+  COMMANDS, 
+  MESSAGES, 
+  MENU_OPTIONS, 
+  REMINDER_STATUS, 
+  REMINDER_FREQUENCY 
+} = require('../constants');
 class WebhookController {
   async processMessage(phoneNumber, messageText, messageId) {
     try {
@@ -19,42 +26,41 @@ class WebhookController {
         logger.info(`New user created: ${normalizedPhone}`);
         await notifierService.send(
           normalizedPhone,
-          '👋 Welcome to Whispr!\n\nJust forward me messages with deadlines and I\'ll remind you!\n\nCommands:\n/help - Get start'
+          MESSAGES.WELCOME
         );
-        return;
       }
 
       await user.updateActivity();
 
       // Global Commands (always available)
       const command = messageText.trim().toLowerCase();
-      if (command === '/help') return await this.handleHelp(phoneNumber);
-      if (command === '/list') return await this.handleList(user, phoneNumber);
-      if (command.startsWith('/delete ')) {
-        const id = command.replace('/delete ', '').trim();
+      if (command === COMMANDS.HELP) return await this.handleHelp(phoneNumber);
+      if (command === COMMANDS.LIST) return await this.handleList(user, phoneNumber);
+      if (command.startsWith(COMMANDS.DELETE + ' ')) {
+        const id = command.replace(COMMANDS.DELETE + ' ', '').trim();
         return await this.handleDelete(user, id, phoneNumber);
       }
-      if (command === 'cancel' || command === '/cancel') {
+      if (command === COMMANDS.CANCEL_NO_SLASH || command === COMMANDS.CANCEL) {
         return await this.handleCancel(user, phoneNumber);
       }
 
       // State Machine
       switch (user.conversationState) {
-        case 'IDLE':
+        case CONVERSATION_STATES.IDLE:
           await this.handleIdle(user, messageText, phoneNumber);
           break;
-        case 'CONFIRM_DETAILS':
+        case CONVERSATION_STATES.CONFIRM_DETAILS:
           await this.handleConfirmDetails(user, messageText, phoneNumber);
           break;
-        case 'SELECT_FREQUENCY':
+        case CONVERSATION_STATES.SELECT_FREQUENCY:
           await this.handleSelectFrequency(user, messageText, phoneNumber);
           break;
-        case 'SELECT_TIMING':
+        case CONVERSATION_STATES.SELECT_TIMING:
           await this.handleSelectTiming(user, messageText, phoneNumber);
           break;
         default:
           logger.error(`Unknown state ${user.conversationState} for user ${user._id}`);
-          user.conversationState = 'IDLE';
+          user.conversationState = CONVERSATION_STATES.IDLE;
           await user.save();
           await this.handleIdle(user, messageText, phoneNumber);
       }
@@ -101,7 +107,7 @@ class WebhookController {
     const msg = `Please confirm details:\n\n` +
       `📝 Task: ${extracted.task}\n` +
       `⏰ Time: ${deadline.toLocaleString('en-US', { timeZone: user.timezone })}\n` +
-      `🚨 Urgency: ${reminder.urgency}\n\n` +
+      `🚨 Urgency: ${extracted.urgency}\n\n` +
       `Reply with:\n` +
       `1. ✅ Confirm & Continue\n` +
       `2. ✏️ Edit (Start Over)\n` +

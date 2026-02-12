@@ -42,3 +42,20 @@ process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', err);
   process.exit(1);
 });
+
+// Handle graceful shutdown
+const gracefulShutdown = async (signal) => {
+  logger.info(`Received ${signal}. Shutting down gracefully...`);
+  try {
+    const baileysService = require('./src/services/baileys.service');
+    await baileysService.stop();
+    logger.info('Cleanup complete. Goodbye!');
+    process.exit(0);
+  } catch (err) {
+    logger.error('Error during graceful shutdown:', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

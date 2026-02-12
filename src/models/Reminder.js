@@ -1,6 +1,8 @@
 // src/models/Reminder.js - Reminder Schema
 const mongoose = require('mongoose');
 
+const { REMINDER_STATUS, REMINDER_FREQUENCY, REMINDER_URGENCY, REMINDER_TYPE } = require('../constants');
+
 const reminderSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -23,8 +25,8 @@ const reminderSchema = new mongoose.Schema({
     },
     type: {
       type: String,
-      enum: ['assignment', 'exam', 'class', 'deadline', 'event', 'other'],
-      default: 'other',
+      enum: Object.values(REMINDER_TYPE),
+      default: REMINDER_TYPE.OTHER,
     },
     deadline: {
       type: Date,
@@ -35,20 +37,20 @@ const reminderSchema = new mongoose.Schema({
     notes: String,
     urgency: {
       type: String,
-      enum: ['low', 'medium', 'high'],
-      default: 'medium',
+      enum: Object.values(REMINDER_URGENCY),
+      default: REMINDER_URGENCY.MEDIUM,
     },
   },
   status: {
     type: String,
-    enum: ['draft', 'active', 'pending', 'sent', 'completed', 'cancelled'],
-    default: 'active',
+    enum: Object.values(REMINDER_STATUS),
+    default: REMINDER_STATUS.ACTIVE,
     index: true,
   },
   frequency: {
     type: String,
-    enum: ['once', 'daily', 'weekly'],
-    default: 'once',
+    enum: Object.values(REMINDER_FREQUENCY),
+    default: REMINDER_FREQUENCY.ONCE,
   },
   notificationTiming: {
     type: [Number], // minutes before due
@@ -70,9 +72,8 @@ const reminderSchema = new mongoose.Schema({
 });
 
 // Update timestamp on save
-reminderSchema.pre('save', function (next) {
+reminderSchema.pre('save', async function () {
   this.updatedAt = new Date();
-  next();
 });
 
 // Find active reminders
