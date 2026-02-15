@@ -9,37 +9,46 @@ const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 class WhisprService {
   async extractReminder(messageText) {
-    logger.info(`[Phase 4] Timezone audit: TZ=${process.env.TZ || 'not set'}, Now=${new Date().toISOString()}, Local=${new Date().toString()}`);
+    const now = new Date();
+    logger.info(`[Phase 4] Timezone audit: TZ=${process.env.TZ || 'not set'}, Now=${now.toISOString()}, Local=${now.toString()}`);
     try {
       const prompt = `You are an academic assistant helping students extract reminder information from messages.
+Current Reference Time: ${now.toISOString()} (${now.toString()})
 
-Extract the following from this message:
+Extract and infer the following from this message:
 - task: The main task/assignment (concise description)
-- course: Subject or course name (if mentioned)
-- type: One of: assignment, exam, class, deadline, event, other
-- deadline: The due date/time (extract any date/time mentioned)
-- urgency: One of: low, medium, high (infer based on language like "important", "urgent", "ASAP" or proximity)
-- location: Physical or virtual location (if mentioned)
-- notes: Any additional important details
+- eventTime: The due date/time (ISO 8601 format). If missing or ambiguous, return null.
+- recurrence: one of: none, daily, weekly. Infer from context (e.g., "every Monday" -> weekly). Default: none.
+- urgency: one of: low, medium, high. 
+  Rules for urgency:
+  - high: eventTime is < 30 minutes from now.
+  - medium: eventTime is same-day but > 1 hour away.
+  - low: eventTime is > 24 hours away.
+- suggestedNotificationStrategy: one of: immediate_only, 30_minutes_before, 1_hour_before, 1_day_before.
+  Rules for strategy:
+  - immediate_only: if eventTime is < 30 minutes away OR if the user specifically asks for an immediate reminder.
+  - 30_minutes_before: default for "medium" urgency if not otherwise specified.
+  - 1_hour_before: for same-day events > 1 hour away.
+  - 1_day_before: for events > 24 hours away.
+  - If the user specifies a timing (e.g., "remind me 2 hours before"), honor it by selecting the closest categorical strategy or use immediate_only if it's very soon.
 
 Message: "${messageText}"
 
 Respond ONLY with valid JSON in this exact format:
 {
   "task": "string",
-  "course": "string or null",
-  "type": "assignment|exam|class|deadline|event|other",
-  "deadline": "ISO 8601 date string or null",
+  "eventTime": "ISO-8601 string or null",
+  "recurrence": "none|daily|weekly",
   "urgency": "low|medium|high",
-  "location": "string or null",
-  "notes": "string or null"
-}`;
+  "suggestedNotificationStrategy": "immediate_only|30_minutes_before|1_hour_before|1_day_before"
+}
+Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
 
       const result = await model.generateContent(prompt);
       const response = await result.response;
       const text = response.text();
 
-      // Extract JSON from response (handle markdown code blocks)
+      // Extract JSON from response (handle markdown code blocks if the AI ignores "no markdown" instruction)
       let jsonText = text.trim();
       if (jsonText.startsWith('```json')) {
         jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
@@ -49,16 +58,25 @@ Respond ONLY with valid JSON in this exact format:
 
       const extracted = JSON.parse(jsonText);
 
-      // Parse deadline with chrono-node if Gemini didn't provide ISO format
-      if (extracted.deadline && !this.isValidDate(extracted.deadline)) {
-        const parsed = chrono.parseDate(extracted.deadline, new Date(), { forwardDate: true });
-        extracted.deadline = parsed ? parsed.toISOString() : null;
-      }
-
-      // If no deadline extracted by AI, try chrono-node on original message
-      if (!extracted.deadline) {
-        const parsed = chrono.parseDate(messageText, new Date(), { forwardDate: true });
-        extracted.deadline = parsed ? parsed.toISOString() : null;
+      // If AI failed to find a time but chrono-node can, use it as a backup
+      if (!extracted.eventTime) {
+        const parsed = chrono.parseDate(messageText, now, { forwardDate: true });
+        if (parsed) {
+          extracted.eventTime = parsed.toISOString();
+          // Adjust urgency/strategy if we recovered the date
+          const diffMs = parsed.getTime() - now.getTime();
+          const diffMins = diffMs / 60000;
+          if (diffMins < 30) {
+            extracted.urgency = 'high';
+            extracted.suggestedNotificationStrategy = 'immediate_only';
+          } else if (diffMins < 1440) {
+            extracted.urgency = 'medium';
+            extracted.suggestedNotificationStrategy = '1_hour_before';
+          } else {
+            extracted.urgency = 'low';
+            extracted.suggestedNotificationStrategy = '1_day_before';
+          }
+        }
       }
 
       logger.info('Extraction successful:', JSON.stringify(extracted, null, 2));
@@ -66,29 +84,26 @@ Respond ONLY with valid JSON in this exact format:
 
     } catch (error) {
       logger.error('Extraction error:', error);
-
-      // Fallback: basic extraction
       return this.fallbackExtraction(messageText);
     }
   }
 
   isValidDate(dateString) {
+    if (!dateString) return false;
     const date = new Date(dateString);
     return date instanceof Date && !isNaN(date);
   }
 
   fallbackExtraction(messageText) {
-    // Simple fallback if AI fails
-    const parsed = chrono.parseDate(messageText, new Date(), { forwardDate: true });
+    const now = new Date();
+    const parsed = chrono.parseDate(messageText, now, { forwardDate: true });
 
     return {
-      task: messageText.substring(0, 100),
-      course: null,
-      type: 'other',
-      deadline: parsed ? parsed.toISOString() : null,
+      task: messageText.substring(0, 50),
+      eventTime: parsed ? parsed.toISOString() : null,
+      recurrence: 'none',
       urgency: 'medium',
-      location: null,
-      notes: null,
+      suggestedNotificationStrategy: '30_minutes_before'
     };
   }
 }

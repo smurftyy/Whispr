@@ -83,16 +83,24 @@ class SchedulerService {
     const deadline = new Date(reminder.extracted.deadline);
     const now = new Date();
     
-    // Get user's reminder preferences (default: 24h and 1h before)
-    const timings = user.preferences?.reminderTiming || [24, 1];
+    // Prioritize reminder-specific timing, fall back to user preferences (stored in hours)
+    // We convert everything to minutes for consistent math
+    let timingsInMinutes = [];
+    
+    if (reminder.notificationTiming && reminder.notificationTiming.length > 0) {
+      timingsInMinutes = reminder.notificationTiming;
+    } else {
+      const userTimings = user.preferences?.reminderTiming || [24, 1];
+      timingsInMinutes = userTimings.map(h => h * 60);
+    }
     
     const scheduledReminders = [];
     
-    for (const hours of timings) {
-      const reminderTime = new Date(deadline.getTime() - (hours * 60 * 60 * 1000));
+    for (const minutes of timingsInMinutes) {
+      const reminderTime = new Date(deadline.getTime() - (minutes * 60 * 1000));
       
       logger.info(`[Phase 1.1] EventTime: ${deadline.toISOString()}`);
-      logger.info(`[Phase 1.1] Offset: ${hours} hours`);
+      logger.info(`[Phase 1.1] Offset: ${minutes} minutes`);
       logger.info(`[Phase 1.1] ComputedNotifyTime: ${reminderTime.toISOString()}`);
 
       // Only schedule if in the future
@@ -125,6 +133,23 @@ class SchedulerService {
         });
         
         logger.info(`Scheduled reminder for ${reminderTime.toISOString()}`);
+      } else if (minutes === 0 && Math.abs(deadline.getTime() - now.getTime()) < 60000) {
+        // Special case for immediate_only: if it's due now or extremely soon, schedule with minimal delay
+        await reminderQueue.add(
+          {
+            reminderId: reminder._id.toString(),
+            scheduledReminderIndex: scheduledReminders.length,
+          },
+          {
+            delay: 0, 
+            attempts: 3
+          }
+        );
+        scheduledReminders.push({
+          scheduledFor: now,
+          sent: false,
+        });
+        logger.info(`Scheduled immediate reminder`);
       } else {
         logger.info(`[Phase 1.1] Reminder time ${reminderTime.toISOString()} is in the past, skipping.`);
       }

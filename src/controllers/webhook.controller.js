@@ -82,44 +82,68 @@ class WebhookController {
   // --- State Handlers ---
 
   async handleIdle(user, messageText, platformId, platform) {
-    await notifierService.send(platformId, '⏳ Analyzing your message...', platform);
+    await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
     const extracted = await whisprService.extractReminder(messageText);
 
-    if (!extracted.deadline) {
+    if (!extracted.eventTime) {
       return await notifierService.send(
         platformId,
-        '❌ I couldn\'t find a deadline.\n\nTry including a date/time:\n"Submit report by Friday 5pm"',
+        MESSAGES.NO_DEADLINE,
         platform
       );
     }
 
-    // Create Draft Reminder
+    // Map Gemini strategy to deterministic timing (Phase 3 requirement)
+    const strategyMap = {
+      'immediate_only': [0],
+      '30_minutes_before': [30],
+      '1_hour_before': [60],
+      '1_day_before': [1440]
+    };
+
+    const notificationTiming = strategyMap[extracted.suggestedNotificationStrategy] || [60];
+
+    // Create and Immediately Schedule Reminder (Phase 5: Refactor Flow)
     const reminder = await Reminder.create({
       userId: user._id,
       originalMessage: messageText,
-      extracted,
-      status: 'draft',
-      urgency: extracted.urgency || 'medium',
+      extracted: {
+        task: extracted.task,
+        deadline: extracted.eventTime,
+        urgency: extracted.urgency,
+      },
+      status: 'active',
+      frequency: extracted.recurrence || 'once',
+      notificationTiming: notificationTiming
     });
 
-    // Update User State
-    user.conversationState = 'CONFIRM_DETAILS';
-    user.draftReminderId = reminder._id;
-    await user.save();
+    // Deterministic Scheduling (backend math)
+    await schedulerService.scheduleReminder(reminder, user);
 
-    // Send Confirmation Request
-    const deadline = new Date(extracted.deadline);
-    const msg = `Please confirm details:\n\n` +
+    // Send Confirmation Summary (Phase 5)
+    const deadline = new Date(extracted.eventTime);
+    const timeStr = deadline.toLocaleString('en-US', { 
+      timeZone: user.timezone || 'UTC',
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    });
+
+    const strategyLabels = {
+      'immediate_only': 'immediately',
+      '30_minutes_before': '30 mins before',
+      '1_hour_before': '1 hour before',
+      '1_day_before': '1 day before'
+    };
+
+    const summaryMsg = `✅ Reminder set!\n\n` +
       `📝 Task: ${extracted.task}\n` +
-      `⏰ Time: ${deadline.toLocaleString('en-US', { timeZone: user.timezone })}\n` +
-      `🚨 Urgency: ${extracted.urgency}\n\n` +
-      `Reply with:\n` +
-      `1. ✅ Confirm & Continue\n` +
-      `2. ✏️ Edit (Start Over)\n` +
-      `3. ❌ Cancel`;
+      `⏰ Due: ${timeStr}\n` +
+      `🔔 Alert: ${strategyLabels[extracted.suggestedNotificationStrategy] || '1 hour before'}\n` +
+      `🔄 Repeat: ${extracted.recurrence || 'none'}\n\n` +
+      `Type /list to see all reminders or /cancel to delete.`;
 
-    await notifierService.send(platformId, msg, platform);
+    await notifierService.send(platformId, summaryMsg, platform);
   }
 
   async handleConfirmDetails(user, messageText, platformId, platform) {
