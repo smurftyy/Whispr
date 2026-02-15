@@ -14,19 +14,23 @@ const {
   REMINDER_FREQUENCY 
 } = require('../constants');
 class WebhookController {
-  async processMessage(phoneNumber, messageText, messageId) {
+  async processMessage(platformId, messageText, messageId) {
     try {
-      // Normalize phone number
-      const normalizedPhone = phoneNumber;
+      // Identity info for this transport
+      const platform = 'telegram'; // Changed for this task as per requirements
 
       // Get or create user
-      let user = await User.findOne({ phoneNumber: normalizedPhone });
+      let user = await User.findOne({ platform, platformId });
       if (!user) {
-        user = await User.create({ phoneNumber: normalizedPhone });
-        logger.info(`New user created: ${normalizedPhone}`);
+        user = await User.create({ 
+          platform, 
+          platformId
+        });
+        logger.info(`New user created: ${platform}:${platformId}`);
         await notifierService.send(
-          normalizedPhone,
-          MESSAGES.WELCOME
+          platformId,
+          MESSAGES.WELCOME,
+          platform
         );
       }
 
@@ -34,57 +38,59 @@ class WebhookController {
 
       // Global Commands (always available)
       const command = messageText.trim().toLowerCase();
-      if (command === COMMANDS.HELP) return await this.handleHelp(phoneNumber);
-      if (command === COMMANDS.LIST) return await this.handleList(user, phoneNumber);
+      if (command === COMMANDS.HELP) return await this.handleHelp(platformId, platform);
+      if (command === COMMANDS.LIST) return await this.handleList(user, platformId, platform);
       if (command.startsWith(COMMANDS.DELETE + ' ')) {
         const id = command.replace(COMMANDS.DELETE + ' ', '').trim();
-        return await this.handleDelete(user, id, phoneNumber);
+        return await this.handleDelete(user, id, platformId, platform);
       }
       if (command === COMMANDS.CANCEL_NO_SLASH || command === COMMANDS.CANCEL) {
-        return await this.handleCancel(user, phoneNumber);
+        return await this.handleCancel(user, platformId, platform);
       }
 
       // State Machine
       switch (user.conversationState) {
         case CONVERSATION_STATES.IDLE:
-          await this.handleIdle(user, messageText, phoneNumber);
+          await this.handleIdle(user, messageText, platformId, platform);
           break;
         case CONVERSATION_STATES.CONFIRM_DETAILS:
-          await this.handleConfirmDetails(user, messageText, phoneNumber);
+          await this.handleConfirmDetails(user, messageText, platformId, platform);
           break;
         case CONVERSATION_STATES.SELECT_FREQUENCY:
-          await this.handleSelectFrequency(user, messageText, phoneNumber);
+          await this.handleSelectFrequency(user, messageText, platformId, platform);
           break;
         case CONVERSATION_STATES.SELECT_TIMING:
-          await this.handleSelectTiming(user, messageText, phoneNumber);
+          await this.handleSelectTiming(user, messageText, platformId, platform);
           break;
         default:
           logger.error(`Unknown state ${user.conversationState} for user ${user._id}`);
           user.conversationState = CONVERSATION_STATES.IDLE;
           await user.save();
-          await this.handleIdle(user, messageText, phoneNumber);
+          await this.handleIdle(user, messageText, platformId, platform);
       }
 
     } catch (error) {
       logger.error('Process message error:', error);
       await notifierService.send(
-        phoneNumber,
-        '❌ Something went wrong. Please try again or type /help.'
+        platformId,
+        '❌ Something went wrong. Please try again or type /help.',
+        'telegram'
       );
     }
   }
 
   // --- State Handlers ---
 
-  async handleIdle(user, messageText, phoneNumber) {
-    await notifierService.send(phoneNumber, '⏳ Analyzing your message...');
+  async handleIdle(user, messageText, platformId, platform) {
+    await notifierService.send(platformId, '⏳ Analyzing your message...', platform);
 
     const extracted = await whisprService.extractReminder(messageText);
 
     if (!extracted.deadline) {
       return await notifierService.send(
-        phoneNumber,
-        '❌ I couldn\'t find a deadline.\n\nTry including a date/time:\n"Submit report by Friday 5pm"'
+        platformId,
+        '❌ I couldn\'t find a deadline.\n\nTry including a date/time:\n"Submit report by Friday 5pm"',
+        platform
       );
     }
 
@@ -113,10 +119,10 @@ class WebhookController {
       `2. ✏️ Edit (Start Over)\n` +
       `3. ❌ Cancel`;
 
-    await notifierService.send(phoneNumber, msg);
+    await notifierService.send(platformId, msg, platform);
   }
 
-  async handleConfirmDetails(user, messageText, phoneNumber) {
+  async handleConfirmDetails(user, messageText, platformId, platform) {
     const choice = messageText.trim();
     const reminder = await Reminder.findById(user.draftReminderId);
 
@@ -124,7 +130,7 @@ class WebhookController {
       // State desync protection
       user.conversationState = 'IDLE';
       await user.save();
-      return await notifierService.send(phoneNumber, '❌ Session expired. Please start again.');
+      return await notifierService.send(platformId, '❌ Session expired. Please start again.', platform);
     }
 
     if (choice === '1') {
@@ -137,35 +143,35 @@ class WebhookController {
         `2. Daily\n` +
         `3. Weekly`;
 
-      await notifierService.send(phoneNumber, msg);
+      await notifierService.send(platformId, msg, platform);
 
     } else if (choice === '2') {
       // Edit / Restart
       await this.cancelDraft(user, reminder);
-      await notifierService.send(phoneNumber, '✏️ Okay, please send the message again with the correct details.');
+      await notifierService.send(platformId, '✏️ Okay, please send the message again with the correct details.', platform);
 
     } else if (choice === '3') {
       // Cancel
       await this.cancelDraft(user, reminder);
-      await notifierService.send(phoneNumber, '❌ Reminder cancelled.');
+      await notifierService.send(platformId, '❌ Reminder cancelled.', platform);
 
     } else {
-      await notifierService.send(phoneNumber, 'Please reply with 1, 2, or 3.');
+      await notifierService.send(platformId, 'Please reply with 1, 2, or 3.', platform);
     }
   }
 
-  async handleSelectFrequency(user, messageText, phoneNumber) {
+  async handleSelectFrequency(user, messageText, platformId, platform) {
     const choice = messageText.trim();
     const reminder = await Reminder.findById(user.draftReminderId);
 
-    if (!reminder) return this.resetState(user, phoneNumber);
+    if (!reminder) return this.resetState(user, platformId, platform);
 
     let frequency = 'once';
     if (choice === '1') frequency = 'once';
     else if (choice === '2') frequency = 'daily';
     else if (choice === '3') frequency = 'weekly';
     else {
-      return await notifierService.send(phoneNumber, 'Please reply with 1 (Once), 2 (Daily), or 3 (Weekly).');
+      return await notifierService.send(platformId, 'Please reply with 1 (Once), 2 (Daily), or 3 (Weekly).', platform);
     }
 
     reminder.frequency = frequency;
@@ -180,14 +186,14 @@ class WebhookController {
       `3. 30 minutes before\n` +
       `4. 1 Day before`;
 
-    await notifierService.send(phoneNumber, msg);
+    await notifierService.send(platformId, msg, platform);
   }
 
-  async handleSelectTiming(user, messageText, phoneNumber) {
+  async handleSelectTiming(user, messageText, platformId, platform) {
     const choice = messageText.trim();
     const reminder = await Reminder.findById(user.draftReminderId);
 
-    if (!reminder) return this.resetState(user, phoneNumber);
+    if (!reminder) return this.resetState(user, platformId, platform);
 
     let timing = [60]; // default 1h
     if (choice === '1') timing = [60];
@@ -195,7 +201,7 @@ class WebhookController {
     else if (choice === '3') timing = [30];
     else if (choice === '4') timing = [1440];
     else {
-      return await notifierService.send(phoneNumber, 'Please reply with 1-4 to select timing.');
+      return await notifierService.send(platformId, 'Please reply with 1-4 to select timing.', platform);
     }
 
     // Finalize Reminder
@@ -211,10 +217,10 @@ class WebhookController {
     user.draftReminderId = null;
     await user.save();
 
-    await notifierService.send(phoneNumber, '✅ All set! I will remind you as requested.');
+    await notifierService.send(platformId, '✅ All set! I will remind you as requested.', platform);
   }
 
-  async handleCancel(user, phoneNumber) {
+  async handleCancel(user, platformId, platform) {
     if (user.conversationState !== 'IDLE' && user.draftReminderId) {
       await Reminder.findByIdAndUpdate(user.draftReminderId, { status: 'cancelled' });
     }
@@ -223,7 +229,7 @@ class WebhookController {
     user.draftReminderId = null;
     await user.save();
 
-    await notifierService.send(phoneNumber, '🚫 Action cancelled. I\'m listening for new reminders.');
+    await notifierService.send(platformId, '🚫 Action cancelled. I\'m listening for new reminders.', platform);
   }
 
   async cancelDraft(user, reminder) {
@@ -234,16 +240,16 @@ class WebhookController {
     await user.save();
   }
 
-  async resetState(user, phoneNumber) {
+  async resetState(user, platformId, platform) {
     user.conversationState = 'IDLE';
     user.draftReminderId = null;
     await user.save();
-    await notifierService.send(phoneNumber, '❌ Session invalid. Please start over.');
+    await notifierService.send(platformId, '❌ Session invalid. Please start over.', platform);
   }
 
   // --- Command Handlers ---
 
-  async handleHelp(phoneNumber) {
+  async handleHelp(platformId, platform) {
     const helpText = `🔔 Whispr Help\n\n` +
       `Forward me tasks or deadlines.\n\n` +
       `Commands:\n` +
@@ -251,14 +257,14 @@ class WebhookController {
       `/delete [id] - Delete a reminder\n` +
       `/cancel - Cancel current action\n` +
       `/help - Show this menu`;
-    await notifierService.send(phoneNumber, helpText);
+    await notifierService.send(platformId, helpText, platform);
   }
 
   // Kept mostly same, just ensured they don't break
-  async handleList(user, phoneNumber) {
+  async handleList(user, platformId, platform) {
     const reminders = await Reminder.findActive(user._id);
     if (reminders.length === 0) {
-      return await notifierService.send(phoneNumber, '📭 No active reminders.');
+      return await notifierService.send(platformId, '📭 No active reminders.', platform);
     }
     let response = `📋 Active Reminders:\n\n`;
     reminders.forEach((r, i) => {
@@ -266,23 +272,23 @@ class WebhookController {
       response += `${i + 1}. ${r.extracted.task}\n   ⏰ ${deadline.toLocaleDateString()} ${deadline.toLocaleTimeString()}\n   ID: ${r._id.toString().slice(-6)}\n\n`;
     });
     response += `Use /delete [id] to remove.`;
-    await notifierService.send(phoneNumber, response);
+    await notifierService.send(platformId, response, platform);
   }
 
-  async handleDelete(user, id, phoneNumber) {
+  async handleDelete(user, id, platformId, platform) {
     // Implementation matches previous logic
     try {
       const reminders = await Reminder.find({ userId: user._id, status: { $in: ['pending', 'active', 'sent'] } });
       const reminder = reminders.find(r => r._id.toString().endsWith(id));
 
-      if (!reminder) return await notifierService.send(phoneNumber, '❌ Reminder not found.');
+      if (!reminder) return await notifierService.send(platformId, '❌ Reminder not found.', platform);
 
       reminder.status = 'cancelled';
       await reminder.save();
-      await notifierService.send(phoneNumber, '✅ Reminder deleted.');
+      await notifierService.send(platformId, '✅ Reminder deleted.', platform);
     } catch (e) {
       logger.error(e);
-      await notifierService.send(phoneNumber, '❌ Error deleting.');
+      await notifierService.send(platformId, '❌ Error deleting.', platform);
     }
   }
 }

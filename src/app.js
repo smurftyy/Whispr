@@ -26,7 +26,7 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.get('/', (req, res) => {
-  res.send('Whispr Backend with Baileys Adapter');
+  res.send('Whispr Backend with Telegram Transport');
 });
 
 // 404 handler

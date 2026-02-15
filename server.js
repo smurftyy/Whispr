@@ -13,25 +13,21 @@ const startServer = async () => {
     await connectDB();
     logger.info('Database connection established');
 
-    // Initialize Baileys Service
-    const baileysService = require('./src/services/baileys.service');
-    const webhookController = require('./src/controllers/webhook.controller');
-
-    await baileysService.initialize();
-    baileysService.onMessage((from, body, id) => {
-      webhookController.processMessage(from, body, id).catch(err => {
-        logger.error('Error processing Baileys message:', err);
-      });
-    });
+    // Initialize Telegram Service
+    const telegramBot = require('./src/telegram');
+    
+    // The telegram bot handles its own message listening via polling
+    // No need to manually register callbacks here as it's done in telegram.js
 
     // Start server
     app.listen(PORT, () => {
       logger.info(`🔔 Whispr is running on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV}`);
+      logger.info(`Telegram Transport: Active`);
     });
   } catch (err) {
-    logger.error('❌ Failed to start server due to DB error:', err.message);
-    process.exit(1); // Kill process if we can't connect
+    logger.error('❌ Failed to start server:', err.message);
+    process.exit(1);
   }
 };
 
@@ -47,8 +43,7 @@ process.on('unhandledRejection', (err) => {
 const gracefulShutdown = async (signal) => {
   logger.info(`Received ${signal}. Shutting down gracefully...`);
   try {
-    const baileysService = require('./src/services/baileys.service');
-    await baileysService.stop();
+    // If we had cleanup for Telegram bot, we'd do it here
     logger.info('Cleanup complete. Goodbye!');
     process.exit(0);
   } catch (err) {

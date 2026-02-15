@@ -4,10 +4,20 @@ const mongoose = require('mongoose');
 const { CONVERSATION_STATES } = require('../constants');
 
 const userSchema = new mongoose.Schema({
-  phoneNumber: {
+  // Platform-agnostic identity
+  platform: {
     type: String,
     required: true,
-    unique: true,
+    default: 'whatsapp', // Default to whatsapp for migration
+  },
+  platformId: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  // Deprecated: Using platformId instead. Keep for legacy lookup/migration.
+  phoneNumber: {
+    type: String,
     trim: true,
   },
   name: {
@@ -51,6 +61,20 @@ const userSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
+
+// Compound unique index for platform identity
+userSchema.index({ platform: 1, platformId: 1 }, { unique: true });
+
+/**
+ * MIGRATION NOTES:
+ * To migrate existing whatsapp users:
+ * db.users.updateMany(
+ *   { platformId: { $exists: false } },
+ *   [
+ *     { $set: { platform: "whatsapp", platformId: "$phoneNumber" } }
+ *   ]
+ * )
+ */
 
 // Update lastActive on any interaction
 userSchema.methods.updateActivity = function () {
