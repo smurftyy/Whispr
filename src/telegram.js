@@ -12,33 +12,33 @@ if (!token) {
 
 let bot;
 
-try {
-  bot = new TelegramBot(token, { polling: true });
-  logger.info('🚀 Telegram bot initialized and polling...');
+  try {
+    bot = new TelegramBot(token, { polling: true });
+    logger.info('🚀 Telegram bot initialized and polling...');
 
-  bot.on('message', async (msg) => {
-    if (!msg.text) return;
+    bot.on('message', async (msg) => {
+      if (!msg.text) return;
 
-    const platformId = msg.from.id.toString();
-    const text = msg.text;
-    const messageId = msg.message_id.toString();
+      const platformId = msg.from.id.toString();
+      const text = msg.text;
+      const messageId = msg.message_id.toString();
 
-    logger.info(`Received Telegram message from ${platformId}: ${text}`);
+      logger.info(`Received Telegram message from ${platformId}: ${text}`);
 
-    try {
-      await webhookController.processMessage(platformId, text, messageId);
-    } catch (error) {
-      logger.error('Error processing Telegram message:', error);
-    }
-  });
+      try {
+        await webhookController.processMessage(platformId, text, messageId);
+      } catch (error) {
+        logger.error('Error processing Telegram message:', error);
+      }
+    });
 
-  bot.on('polling_error', (error) => {
+    bot.on('polling_error', (error) => {
     logger.error('Telegram Polling Error:', error.code || error.message);
-  });
+    });
 
-} catch (error) {
-  logger.error('Failed to initialize Telegram Bot:', error.message);
-}
+  } catch (error) {
+    logger.error('Failed to initialize Telegram Bot:', error.message);
+  }
 
 /**
  * Send a message via Telegram

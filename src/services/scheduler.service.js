@@ -1,16 +1,33 @@
  // src/services/scheduler.service.js - Reminder Scheduler with Bull Queue
 const Queue = require('bull');
+const mongoose = require('mongoose');
 const Reminder = require('../models/Reminder');
 const User = require('../models/User');
 const notifierService = require('./notifier.service');
 const logger = require('../utils/logger');
 
-const reminderQueue = new Queue('reminders', process.env.REDIS_URL);
+const reminderQueue = new Queue('reminders', process.env.REDIS_URL, {
+  redis: {
+    tls: process.env.REDIS_URL.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false
+  }
+});
 
 class SchedulerService {
   constructor() {
     this.setupWorker();
     this.startPeriodicCheck();
+    
+    // Phase 3 Fix: Rehydrate jobs only after DB is connected
+    if (mongoose.connection.readyState === 1) {
+      this.checkAndScheduleReminders();
+    } else {
+      mongoose.connection.once('connected', () => {
+        logger.info('[Phase 3] Rehydrating jobs after DB connection');
+        this.checkAndScheduleReminders();
+      });
+    }
   }
   
   setupWorker() {
@@ -18,6 +35,9 @@ class SchedulerService {
     reminderQueue.process(async (job) => {
       const { reminderId, scheduledReminderIndex } = job.data;
       
+      logger.info(`[Phase 1.2] Job fired at Y: ${new Date().toISOString()}`);
+      logger.info(`[Phase 4] Timezone: TZ=${process.env.TZ || 'not set'}, Local=${new Date().toString()}`);
+
       try {
         const reminder = await Reminder.findById(reminderId);
         if (!reminder || reminder.status === 'cancelled') {
@@ -71,9 +91,14 @@ class SchedulerService {
     for (const hours of timings) {
       const reminderTime = new Date(deadline.getTime() - (hours * 60 * 60 * 1000));
       
+      logger.info(`[Phase 1.1] EventTime: ${deadline.toISOString()}`);
+      logger.info(`[Phase 1.1] Offset: ${hours} hours`);
+      logger.info(`[Phase 1.1] ComputedNotifyTime: ${reminderTime.toISOString()}`);
+
       // Only schedule if in the future
       if (reminderTime > now) {
         const delay = reminderTime.getTime() - now.getTime();
+        logger.info(`[Phase 1.1] Delay: ${delay}ms (~${Math.round(delay / 60000)} minutes)`);
         
         // Add to Bull queue
         await reminderQueue.add(
@@ -91,12 +116,17 @@ class SchedulerService {
           }
         );
         
+        logger.info(`[Phase 1.2] Job scheduled at X: ${new Date().toISOString()}`);
+        logger.info(`[Phase 4] Timezone: TZ=${process.env.TZ || 'not set'}, Local=${new Date().toString()}`);
+
         scheduledReminders.push({
           scheduledFor: reminderTime,
           sent: false,
         });
         
         logger.info(`Scheduled reminder for ${reminderTime.toISOString()}`);
+      } else {
+        logger.info(`[Phase 1.1] Reminder time ${reminderTime.toISOString()} is in the past, skipping.`);
       }
     }
     
@@ -118,7 +148,6 @@ class SchedulerService {
       }
     }, 60 * 60 * 1000);
     
-    // Don't run initial check - it will run after first reminder or after 1 hour
     logger.info('⏰ Periodic scheduler started (runs every hour)');
   }
   

@@ -7,40 +7,40 @@ import logger from './utils/logger';
 
 const token = process.env.TELEGRAM_BOT_TOKEN as string;
 
+let bot: TelegramBot | undefined;
+
 if (!token) {
   console.error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
-}
+} else {
+  try {
+    const botInstance = new TelegramBot(token, { polling: true });
+    bot = botInstance;
+    console.log('Telegram bot initialized and polling...');
 
-let bot: TelegramBot;
+    botInstance.on('message', async (msg) => {
+      if (!msg.text) return;
 
-try {
-  bot = new TelegramBot(token, { polling: true });
-  console.log('🚀 Telegram bot initialized and polling...');
+      const platformId = msg.from?.id.toString();
+      if (!platformId) return;
+      
+      const text = msg.text;
+      const messageId = msg.message_id.toString();
 
-  bot.on('message', async (msg) => {
-    if (!msg.text) return;
+      console.log(`Received Telegram message from ${platformId}: ${text}`);
 
-    const platformId = msg.from?.id.toString();
-    if (!platformId) return;
-    
-    const text = msg.text;
-    const messageId = msg.message_id.toString();
+      try {
+        await webhookController.processMessage(platformId, text, messageId);
+      } catch (error) {
+        console.error('Error processing Telegram message:', error);
+      }
+    });
 
-    console.log(`Received Telegram message from ${platformId}: ${text}`);
-
-    try {
-      await webhookController.processMessage(platformId, text, messageId);
-    } catch (error) {
-      console.error('Error processing Telegram message:', error);
-    }
-  });
-
-  bot.on('polling_error', (error: any) => {
-    console.error('Telegram Polling Error:', error.code || error.message);
-  });
-
-} catch (error: any) {
-  console.error('Failed to initialize Telegram Bot:', error.message);
+    botInstance.on('polling_error', (error: any) => {
+      console.error('Telegram Polling Error:', error.code || error.message);
+    });
+  } catch (error: any) {
+    console.error('Failed to initialize Telegram Bot:', error.message);
+  }
 }
 
 /**
@@ -49,12 +49,13 @@ try {
  * @param {string} message - Content
  */
 export const sendMessage = async (to: string, message: string) => {
-  if (!bot) {
+  const currentBot = bot;
+  if (!currentBot) {
     console.error('Cannot send message: Telegram bot not initialized');
     return { success: false, error: 'Bot not initialized' };
   }
   try {
-    await bot.sendMessage(to, message);
+    await currentBot.sendMessage(to, message);
     return { success: true };
   } catch (error: any) {
     console.error(`Failed to send Telegram message to ${to}:`, error.message);

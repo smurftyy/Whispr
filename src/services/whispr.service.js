@@ -4,10 +4,12 @@ const chrono = require('chrono-node');
 const logger = require('../utils/logger');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+// Using gemini-2.0-flash as gemini-1.5-flash is returning 404 for this account
+const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 class WhisprService {
   async extractReminder(messageText) {
+    logger.info(`[Phase 4] Timezone audit: TZ=${process.env.TZ || 'not set'}, Now=${new Date().toISOString()}, Local=${new Date().toString()}`);
     try {
       const prompt = `You are an academic assistant helping students extract reminder information from messages.
 
