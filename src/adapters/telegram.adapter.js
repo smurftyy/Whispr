@@ -33,7 +33,7 @@ class TelegramAdapter extends MessagingProvider {
       this.bot = new TelegramBot(this.token, { polling: false }); // Start with polling off
       
       // Clean up any old webhooks to avoid 409 Conflicts
-      await this.bot.deleteWebhook();
+      await this.bot.deleteWebHook();
       
       // Start polling manually
       await this.bot.startPolling();
