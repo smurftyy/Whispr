@@ -26,7 +26,7 @@ const startServer = async () => {
 
     // 2. Messaging adapter — swap this block to change platforms
     const telegram = new TelegramAdapter(env.TELEGRAM_BOT_TOKEN);
-    telegram.start();
+    await telegram.start();
     telegram.onMessage(async (from, body, messageId) => {
       logger.info(`Received message from ${from}: ${body}`);
       try {

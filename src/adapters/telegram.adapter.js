@@ -22,7 +22,7 @@ class TelegramAdapter extends MessagingProvider {
    * Initialize the Telegram bot and start polling for messages.
    * Safe to call multiple times — subsequent calls are no-ops.
    */
-  start() {
+  async start() {
     if (this.bot) return;
     if (!this.token) {
       logger.error('TelegramAdapter: Missing bot token — adapter disabled');
@@ -30,11 +30,26 @@ class TelegramAdapter extends MessagingProvider {
     }
 
     try {
-      this.bot = new TelegramBot(this.token, { polling: true });
+      this.bot = new TelegramBot(this.token, { polling: false }); // Start with polling off
+      
+      // Clean up any old webhooks to avoid 409 Conflicts
+      await this.bot.deleteWebhook();
+      
+      // Start polling manually
+      await this.bot.startPolling();
+      
       logger.info('🚀 Telegram bot initialized and polling...');
 
       this.bot.on('polling_error', (error) => {
-        logger.error('Telegram polling error:', error.code || error.message);
+        // Detailed logging for common Telegram errors
+        const message = error.message || 'Unknown polling error';
+        const code = error.code || 'UNKNOWN';
+        
+        logger.error(`Telegram polling error [${code}]: ${message}`);
+        
+        if (message.includes('409 Conflict')) {
+          logger.error('💡 TIP: Another instance of this bot is already running or a webhook is set. Disable other instances or remove the webhook.');
+        }
       });
     } catch (error) {
       logger.error('Failed to initialize Telegram bot:', error.message);
