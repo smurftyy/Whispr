@@ -37,7 +37,8 @@ const REMINDER_STATUS = {
 };
 
 const REMINDER_FREQUENCY = {
-  ONCE: 'once',
+  NONE: 'none',
+  ONCE: 'none', // Alias for backward compatibility
   DAILY: 'daily',
   WEEKLY: 'weekly',
 };

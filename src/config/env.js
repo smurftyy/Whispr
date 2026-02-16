@@ -43,7 +43,7 @@ const REQUIRED = ['MONGODB_URI', 'REDIS_URL', 'GEMINI_API_KEY'];
 
 const missing = REQUIRED.filter((key) => !env[key]);
 if (missing.length > 0) {
-  console.error(`❌ Missing required environment variables: ${missing.join(', ')}`);
+  console.error(`Missing required environment variables: ${missing.join(', ')}`);
   console.error('   Copy .env.example to .env and fill in the values.');
   process.exit(1);
 }

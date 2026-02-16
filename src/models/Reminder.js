@@ -50,7 +50,7 @@ const reminderSchema = new mongoose.Schema({
   frequency: {
     type: String,
     enum: Object.values(REMINDER_FREQUENCY),
-    default: REMINDER_FREQUENCY.ONCE,
+    default: REMINDER_FREQUENCY.NONE,
   },
   notificationTiming: {
     type: [Number], // minutes before due

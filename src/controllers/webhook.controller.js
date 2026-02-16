@@ -126,7 +126,7 @@ class WebhookController {
         urgency: extracted.urgency,
       },
       status: 'active',
-      frequency: extracted.recurrence || 'once',
+      frequency: extracted.recurrence || 'none',
       notificationTiming,
     });
 
@@ -187,7 +187,7 @@ class WebhookController {
     const reminder = await Reminder.findById(user.draftReminderId);
     if (!reminder) return this._resetState(user, platformId, platform);
 
-    const freqMap = { '1': 'once', '2': 'daily', '3': 'weekly' };
+    const freqMap = { '1': 'none', '2': 'daily', '3': 'weekly' };
     const frequency = freqMap[choice];
     if (!frequency) {
       return notifierService.send(platformId, 'Please reply with 1 (Once), 2 (Daily), or 3 (Weekly).', platform);
