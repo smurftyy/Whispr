@@ -63,28 +63,48 @@ class SchedulerService {
    * @returns {Promise<number>} Number of jobs successfully scheduled
    */
   async scheduleReminder(reminder, user) {
-    const deadline = new Date(reminder.extracted.deadline);
-    const now = new Date();
+    const deadlineMs = new Date(reminder.extracted.deadline).getTime();
+    const nowMs = Date.now();
+
+    if (!Number.isFinite(deadlineMs)) {
+      logger.error(`Invalid reminder deadline for ${reminder._id} — scheduling skipped`);
+      reminder.scheduledReminders = [];
+      await reminder.save();
+      return 0;
+    }
 
     const timingsInMinutes = this._resolveTimings(reminder, user);
+    const normalizedTimings = [...new Set(
+      timingsInMinutes
+        .map((minutes) => Number(minutes))
+        .filter((minutes) => Number.isFinite(minutes) && minutes >= 0),
+    )].sort((a, b) => b - a);
+
     const scheduledReminders = [];
 
-    for (const minutes of timingsInMinutes) {
-      const reminderTime = new Date(deadline.getTime() - minutes * 60 * 1000);
+    for (const minutes of normalizedTimings) {
+      const offsetMs = minutes * 60 * 1000;
+      const reminderTimeMs = deadlineMs - offsetMs;
+      const delayMs = reminderTimeMs - nowMs;
 
-      if (reminderTime > now) {
-        // Normal future job
-        const delay = reminderTime.getTime() - now.getTime();
-        await this._enqueueJob(reminder._id, scheduledReminders.length, delay);
+      if (delayMs > 0) {
+        const reminderTime = new Date(reminderTimeMs);
+        await this._enqueueJob(reminder._id, scheduledReminders.length, delayMs);
         scheduledReminders.push({ scheduledFor: reminderTime, sent: false });
         logger.info(`Scheduled reminder for ${reminderTime.toISOString()} (${minutes}m notice)`);
-      } else if (minutes === 0 && Math.abs(deadline.getTime() - now.getTime()) < IMMEDIATE_THRESHOLD_MS) {
-        // "immediate_only" — fire right now
+      } else if (
+        minutes === 0
+        && deadlineMs >= nowMs
+        && (deadlineMs - nowMs) <= IMMEDIATE_THRESHOLD_MS
+      ) {
+        // "immediate_only" — deadline is close enough that queueing now is safer than delay math
         await this._enqueueJob(reminder._id, scheduledReminders.length, 0);
-        scheduledReminders.push({ scheduledFor: now, sent: false });
+        scheduledReminders.push({ scheduledFor: new Date(nowMs), sent: false });
         logger.info('Scheduled immediate reminder');
       } else {
-        logger.info(`Reminder time ${reminderTime.toISOString()} is in the past — skipped`);
+        logger.info(
+          `Skipped reminder offset ${minutes}m for ${reminder._id}: computed notification time is in the past`,
+        );
       }
     }
 
