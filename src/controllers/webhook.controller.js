@@ -1,110 +1,122 @@
-// src/controllers/webhook.controller.js - WhatsApp Message Handler
+// src/controllers/webhook.controller.js — Message Handler (Platform-Agnostic)
 const User = require('../models/User');
 const Reminder = require('../models/Reminder');
 const whisprService = require('../services/whispr.service');
 const notifierService = require('../services/notifier.service');
 const schedulerService = require('../services/scheduler.service');
 const logger = require('../utils/logger');
-const { 
-  CONVERSATION_STATES, 
-  COMMANDS, 
-  MESSAGES, 
-  MENU_OPTIONS, 
-  REMINDER_STATUS, 
-  REMINDER_FREQUENCY 
+const {
+  CONVERSATION_STATES,
+  COMMANDS,
+  MESSAGES,
+  NOTIFICATION_STRATEGIES,
 } = require('../constants');
+
+// ---------------------------------------------------------------------------
+// Strategy → minutes mapping (deterministic, matches Gemini output)
+// ---------------------------------------------------------------------------
+const STRATEGY_TIMING_MAP = {
+  [NOTIFICATION_STRATEGIES.IMMEDIATE]:        [0],
+  [NOTIFICATION_STRATEGIES.THIRTY_MIN_BEFORE]: [30],
+  [NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE]:   [60],
+  [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]:    [1440],
+};
+
+const STRATEGY_LABELS = {
+  [NOTIFICATION_STRATEGIES.IMMEDIATE]:        'immediately',
+  [NOTIFICATION_STRATEGIES.THIRTY_MIN_BEFORE]: '30 mins before',
+  [NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE]:   '1 hour before',
+  [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]:    '1 day before',
+};
+
+/**
+ * WebhookController — Processes every inbound user message.
+ *
+ * The conversation state machine is intentionally minimal:
+ *   IDLE → (message) → schedule immediately if extraction succeeds
+ *                     → ask for clarification only when eventTime is null
+ *
+ * Legacy multi-step states (CONFIRM_DETAILS, SELECT_FREQUENCY, SELECT_TIMING)
+ * are kept for backward compatibility but are no longer entered by the primary flow.
+ */
 class WebhookController {
+  /**
+   * Entry point for every inbound message regardless of transport.
+   * @param {string} platformId - User ID on the messaging platform
+   * @param {string} messageText - Raw message content
+   * @param {string} messageId - Message ID for deduplication
+   */
   async processMessage(platformId, messageText, messageId) {
     try {
-      // Identity info for this transport
-      const platform = 'telegram'; // Changed for this task as per requirements
+      const platform = 'telegram'; // resolved at adapter layer
 
-      // Get or create user
+      // Upsert user
       let user = await User.findOne({ platform, platformId });
       if (!user) {
-        user = await User.create({ 
-          platform, 
-          platformId
-        });
+        user = await User.create({ platform, platformId });
         logger.info(`New user created: ${platform}:${platformId}`);
-        await notifierService.send(
-          platformId,
-          MESSAGES.WELCOME,
-          platform
-        );
+        await notifierService.send(platformId, MESSAGES.WELCOME, platform);
       }
 
       await user.updateActivity();
 
-      // Global Commands (always available)
+      // --- Global commands (available in any state) ---
       const command = messageText.trim().toLowerCase();
-      if (command === COMMANDS.HELP) return await this.handleHelp(platformId, platform);
-      if (command === COMMANDS.LIST) return await this.handleList(user, platformId, platform);
-      if (command.startsWith(COMMANDS.DELETE + ' ')) {
-        const id = command.replace(COMMANDS.DELETE + ' ', '').trim();
-        return await this.handleDelete(user, id, platformId, platform);
+      if (command === COMMANDS.HELP)   return this._handleHelp(platformId, platform);
+      if (command === COMMANDS.LIST)   return this._handleList(user, platformId, platform);
+      if (command === COMMANDS.CANCEL || command === COMMANDS.CANCEL_NO_SLASH) {
+        return this._handleCancel(user, platformId, platform);
       }
-      if (command === COMMANDS.CANCEL_NO_SLASH || command === COMMANDS.CANCEL) {
-        return await this.handleCancel(user, platformId, platform);
+      if (command.startsWith(`${COMMANDS.DELETE} `)) {
+        const id = command.replace(`${COMMANDS.DELETE} `, '').trim();
+        return this._handleDelete(user, id, platformId, platform);
       }
 
-      // State Machine
+      // --- State machine ---
       switch (user.conversationState) {
         case CONVERSATION_STATES.IDLE:
-          await this.handleIdle(user, messageText, platformId, platform);
-          break;
+          return this._handleIdle(user, messageText, platformId, platform);
         case CONVERSATION_STATES.CONFIRM_DETAILS:
-          await this.handleConfirmDetails(user, messageText, platformId, platform);
-          break;
+          return this._handleConfirmDetails(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_FREQUENCY:
-          await this.handleSelectFrequency(user, messageText, platformId, platform);
-          break;
+          return this._handleSelectFrequency(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_TIMING:
-          await this.handleSelectTiming(user, messageText, platformId, platform);
-          break;
+          return this._handleSelectTiming(user, messageText, platformId, platform);
         default:
           logger.error(`Unknown state ${user.conversationState} for user ${user._id}`);
           user.conversationState = CONVERSATION_STATES.IDLE;
           await user.save();
-          await this.handleIdle(user, messageText, platformId, platform);
+          return this._handleIdle(user, messageText, platformId, platform);
       }
-
     } catch (error) {
-      logger.error('Process message error:', error);
+      logger.error('Process message error:', error.message);
       await notifierService.send(
         platformId,
-        '❌ Something went wrong. Please try again or type /help.',
-        'telegram'
+        MESSAGES.ERROR_GENERIC,
+        'telegram',
       );
     }
   }
 
-  // --- State Handlers ---
+  // -------------------------------------------------------------------------
+  // State handlers
+  // -------------------------------------------------------------------------
 
-  async handleIdle(user, messageText, platformId, platform) {
+  /**
+   * Primary flow: extract → schedule → confirm in a single turn.
+   */
+  async _handleIdle(user, messageText, platformId, platform) {
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
     const extracted = await whisprService.extractReminder(messageText);
 
     if (!extracted.eventTime) {
-      return await notifierService.send(
-        platformId,
-        MESSAGES.NO_DEADLINE,
-        platform
-      );
+      return notifierService.send(platformId, MESSAGES.NO_DEADLINE, platform);
     }
 
-    // Map Gemini strategy to deterministic timing (Phase 3 requirement)
-    const strategyMap = {
-      'immediate_only': [0],
-      '30_minutes_before': [30],
-      '1_hour_before': [60],
-      '1_day_before': [1440]
-    };
+    const strategy = extracted.suggestedNotificationStrategy;
+    const notificationTiming = STRATEGY_TIMING_MAP[strategy] || STRATEGY_TIMING_MAP[NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE];
 
-    const notificationTiming = strategyMap[extracted.suggestedNotificationStrategy] || [60];
-
-    // Create and Immediately Schedule Reminder (Phase 5: Refactor Flow)
     const reminder = await Reminder.create({
       userId: user._id,
       originalMessage: messageText,
@@ -115,205 +127,180 @@ class WebhookController {
       },
       status: 'active',
       frequency: extracted.recurrence || 'once',
-      notificationTiming: notificationTiming
+      notificationTiming,
     });
 
-    // Deterministic Scheduling (backend math)
     await schedulerService.scheduleReminder(reminder, user);
 
-    // Send Confirmation Summary (Phase 5)
+    // Confirmation summary
     const deadline = new Date(extracted.eventTime);
-    const timeStr = deadline.toLocaleString('en-US', { 
+    const timeStr = deadline.toLocaleString('en-US', {
       timeZone: user.timezone || 'UTC',
       dateStyle: 'medium',
-      timeStyle: 'short'
+      timeStyle: 'short',
     });
 
-    const strategyLabels = {
-      'immediate_only': 'immediately',
-      '30_minutes_before': '30 mins before',
-      '1_hour_before': '1 hour before',
-      '1_day_before': '1 day before'
-    };
+    const alertLabel = STRATEGY_LABELS[strategy] || '1 hour before';
 
-    const summaryMsg = `✅ Reminder set!\n\n` +
+    const summary =
+      `✅ Reminder set!\n\n` +
       `📝 Task: ${extracted.task}\n` +
       `⏰ Due: ${timeStr}\n` +
-      `🔔 Alert: ${strategyLabels[extracted.suggestedNotificationStrategy] || '1 hour before'}\n` +
+      `🔔 Alert: ${alertLabel}\n` +
       `🔄 Repeat: ${extracted.recurrence || 'none'}\n\n` +
       `Type /list to see all reminders or /cancel to delete.`;
 
-    await notifierService.send(platformId, summaryMsg, platform);
+    await notifierService.send(platformId, summary, platform);
   }
 
-  async handleConfirmDetails(user, messageText, platformId, platform) {
+  /** Legacy: handle confirmation step (kept for backward compat). */
+  async _handleConfirmDetails(user, messageText, platformId, platform) {
     const choice = messageText.trim();
     const reminder = await Reminder.findById(user.draftReminderId);
 
     if (!reminder) {
-      // State desync protection
-      user.conversationState = 'IDLE';
+      user.conversationState = CONVERSATION_STATES.IDLE;
       await user.save();
-      return await notifierService.send(platformId, '❌ Session expired. Please start again.', platform);
+      return notifierService.send(platformId, MESSAGES.SESSION_Expired, platform);
     }
 
     if (choice === '1') {
-      // Proceed to Frequency
-      user.conversationState = 'SELECT_FREQUENCY';
+      user.conversationState = CONVERSATION_STATES.SELECT_FREQUENCY;
       await user.save();
-
-      const msg = `How often should I remind you?\n\n` +
-        `1. Just Once (Default)\n` +
-        `2. Daily\n` +
-        `3. Weekly`;
-
-      await notifierService.send(platformId, msg, platform);
-
-    } else if (choice === '2') {
-      // Edit / Restart
-      await this.cancelDraft(user, reminder);
-      await notifierService.send(platformId, '✏️ Okay, please send the message again with the correct details.', platform);
-
-    } else if (choice === '3') {
-      // Cancel
-      await this.cancelDraft(user, reminder);
-      await notifierService.send(platformId, '❌ Reminder cancelled.', platform);
-
-    } else {
-      await notifierService.send(platformId, 'Please reply with 1, 2, or 3.', platform);
+      return notifierService.send(platformId, MESSAGES.selectFrequency(), platform);
     }
+    if (choice === '2') {
+      await this._cancelDraft(user, reminder);
+      return notifierService.send(platformId, MESSAGES.EDIT_PROMPT, platform);
+    }
+    if (choice === '3') {
+      await this._cancelDraft(user, reminder);
+      return notifierService.send(platformId, MESSAGES.REMINDER_CANCELLED, platform);
+    }
+
+    return notifierService.send(platformId, MESSAGES.INVALID_OPTION, platform);
   }
 
-  async handleSelectFrequency(user, messageText, platformId, platform) {
+  /** Legacy: frequency selection. */
+  async _handleSelectFrequency(user, messageText, platformId, platform) {
     const choice = messageText.trim();
     const reminder = await Reminder.findById(user.draftReminderId);
+    if (!reminder) return this._resetState(user, platformId, platform);
 
-    if (!reminder) return this.resetState(user, platformId, platform);
-
-    let frequency = 'once';
-    if (choice === '1') frequency = 'once';
-    else if (choice === '2') frequency = 'daily';
-    else if (choice === '3') frequency = 'weekly';
-    else {
-      return await notifierService.send(platformId, 'Please reply with 1 (Once), 2 (Daily), or 3 (Weekly).', platform);
+    const freqMap = { '1': 'once', '2': 'daily', '3': 'weekly' };
+    const frequency = freqMap[choice];
+    if (!frequency) {
+      return notifierService.send(platformId, 'Please reply with 1 (Once), 2 (Daily), or 3 (Weekly).', platform);
     }
 
     reminder.frequency = frequency;
     await reminder.save();
-
-    user.conversationState = 'SELECT_TIMING';
+    user.conversationState = CONVERSATION_STATES.SELECT_TIMING;
     await user.save();
 
-    const msg = `When do you want to be notified?\n\n` +
-      `1. 1 hour before\n` +
-      `2. 24 hours & 1 hour before\n` +
-      `3. 30 minutes before\n` +
-      `4. 1 Day before`;
-
-    await notifierService.send(platformId, msg, platform);
+    return notifierService.send(platformId, MESSAGES.selectTiming(), platform);
   }
 
-  async handleSelectTiming(user, messageText, platformId, platform) {
+  /** Legacy: timing selection. */
+  async _handleSelectTiming(user, messageText, platformId, platform) {
     const choice = messageText.trim();
     const reminder = await Reminder.findById(user.draftReminderId);
+    if (!reminder) return this._resetState(user, platformId, platform);
 
-    if (!reminder) return this.resetState(user, platformId, platform);
-
-    let timing = [60]; // default 1h
-    if (choice === '1') timing = [60];
-    else if (choice === '2') timing = [1440, 60];
-    else if (choice === '3') timing = [30];
-    else if (choice === '4') timing = [1440];
-    else {
-      return await notifierService.send(platformId, 'Please reply with 1-4 to select timing.', platform);
+    const timingMap = { '1': [60], '2': [1440, 60], '3': [30], '4': [1440] };
+    const timing = timingMap[choice];
+    if (!timing) {
+      return notifierService.send(platformId, 'Please reply with 1–4 to select timing.', platform);
     }
 
-    // Finalize Reminder
     reminder.notificationTiming = timing;
     reminder.status = 'active';
     await reminder.save();
 
-    // Schedule it
     await schedulerService.scheduleReminder(reminder, user);
 
-    // Reset User
-    user.conversationState = 'IDLE';
+    user.conversationState = CONVERSATION_STATES.IDLE;
     user.draftReminderId = null;
     await user.save();
 
-    await notifierService.send(platformId, '✅ All set! I will remind you as requested.', platform);
+    return notifierService.send(platformId, MESSAGES.ALL_SET, platform);
   }
 
-  async handleCancel(user, platformId, platform) {
-    if (user.conversationState !== 'IDLE' && user.draftReminderId) {
-      await Reminder.findByIdAndUpdate(user.draftReminderId, { status: 'cancelled' });
-    }
+  // -------------------------------------------------------------------------
+  // Command handlers
+  // -------------------------------------------------------------------------
 
-    user.conversationState = 'IDLE';
-    user.draftReminderId = null;
-    await user.save();
-
-    await notifierService.send(platformId, '🚫 Action cancelled. I\'m listening for new reminders.', platform);
+  async _handleHelp(platformId, platform) {
+    return notifierService.send(platformId, MESSAGES.helpText(), platform);
   }
 
-  async cancelDraft(user, reminder) {
-    reminder.status = 'cancelled';
-    await reminder.save();
-    user.conversationState = 'IDLE';
-    user.draftReminderId = null;
-    await user.save();
-  }
-
-  async resetState(user, platformId, platform) {
-    user.conversationState = 'IDLE';
-    user.draftReminderId = null;
-    await user.save();
-    await notifierService.send(platformId, '❌ Session invalid. Please start over.', platform);
-  }
-
-  // --- Command Handlers ---
-
-  async handleHelp(platformId, platform) {
-    const helpText = `🔔 Whispr Help\n\n` +
-      `Forward me tasks or deadlines.\n\n` +
-      `Commands:\n` +
-      `/list - Show active reminders\n` +
-      `/delete [id] - Delete a reminder\n` +
-      `/cancel - Cancel current action\n` +
-      `/help - Show this menu`;
-    await notifierService.send(platformId, helpText, platform);
-  }
-
-  // Kept mostly same, just ensured they don't break
-  async handleList(user, platformId, platform) {
+  async _handleList(user, platformId, platform) {
     const reminders = await Reminder.findActive(user._id);
     if (reminders.length === 0) {
-      return await notifierService.send(platformId, '📭 No active reminders.', platform);
+      return notifierService.send(platformId, MESSAGES.NO_ACTIVE_REMINDERS, platform);
     }
-    let response = `📋 Active Reminders:\n\n`;
+
+    let response = '📋 Active Reminders:\n\n';
     reminders.forEach((r, i) => {
       const deadline = new Date(r.extracted.deadline);
-      response += `${i + 1}. ${r.extracted.task}\n   ⏰ ${deadline.toLocaleDateString()} ${deadline.toLocaleTimeString()}\n   ID: ${r._id.toString().slice(-6)}\n\n`;
+      const timeStr = deadline.toLocaleString('en-US', { timeZone: user.timezone || 'UTC' });
+      const shortId = r._id.toString().slice(-6);
+      response += `${i + 1}. ${r.extracted.task}\n   ⏰ ${timeStr}\n   ID: ${shortId}\n\n`;
     });
-    response += `Use /delete [id] to remove.`;
-    await notifierService.send(platformId, response, platform);
+    response += 'Use /delete [id] to remove.';
+
+    return notifierService.send(platformId, response, platform);
   }
 
-  async handleDelete(user, id, platformId, platform) {
-    // Implementation matches previous logic
-    try {
-      const reminders = await Reminder.find({ userId: user._id, status: { $in: ['pending', 'active', 'sent'] } });
-      const reminder = reminders.find(r => r._id.toString().endsWith(id));
+  async _handleCancel(user, platformId, platform) {
+    if (user.conversationState !== CONVERSATION_STATES.IDLE && user.draftReminderId) {
+      await Reminder.findByIdAndUpdate(user.draftReminderId, { status: 'cancelled' });
+    }
+    user.conversationState = CONVERSATION_STATES.IDLE;
+    user.draftReminderId = null;
+    await user.save();
 
-      if (!reminder) return await notifierService.send(platformId, '❌ Reminder not found.', platform);
+    return notifierService.send(platformId, MESSAGES.CANCELLED, platform);
+  }
+
+  async _handleDelete(user, id, platformId, platform) {
+    try {
+      const reminders = await Reminder.find({
+        userId: user._id,
+        status: { $in: ['pending', 'active', 'sent'] },
+      });
+      const reminder = reminders.find((r) => r._id.toString().endsWith(id));
+
+      if (!reminder) {
+        return notifierService.send(platformId, MESSAGES.REMINDER_NOT_FOUND, platform);
+      }
 
       reminder.status = 'cancelled';
       await reminder.save();
-      await notifierService.send(platformId, '✅ Reminder deleted.', platform);
-    } catch (e) {
-      logger.error(e);
-      await notifierService.send(platformId, '❌ Error deleting.', platform);
+      return notifierService.send(platformId, MESSAGES.REMINDER_DELETED, platform);
+    } catch (error) {
+      logger.error('Delete error:', error.message);
+      return notifierService.send(platformId, MESSAGES.ERROR_DELETING, platform);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------------
+
+  async _cancelDraft(user, reminder) {
+    reminder.status = 'cancelled';
+    await reminder.save();
+    user.conversationState = CONVERSATION_STATES.IDLE;
+    user.draftReminderId = null;
+    await user.save();
+  }
+
+  async _resetState(user, platformId, platform) {
+    user.conversationState = CONVERSATION_STATES.IDLE;
+    user.draftReminderId = null;
+    await user.save();
+    return notifierService.send(platformId, MESSAGES.SESSION_INVALID, platform);
   }
 }
 

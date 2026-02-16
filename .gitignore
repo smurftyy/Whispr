@@ -4,5 +4,16 @@ node_modules/
 .DS_Store
 dist/
 build/
-whispr
-whispr.pub
+auth_info_baileys/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# Test artifacts
+coverage/

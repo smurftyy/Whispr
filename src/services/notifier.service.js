@@ -1,44 +1,72 @@
-// src/services/notifier.service.js - Message Sender
+// src/services/notifier.service.js — Platform-Agnostic Message Sender
 const logger = require('../utils/logger');
 
+/**
+ * NotifierService acts as a message router.  Adapters are registered at boot
+ * time via `registerAdapter()`, and `send()` delegates to the correct one
+ * based on the platform name.
+ *
+ * This design means the core logic never imports a specific adapter directly,
+ * making the system fully transport-agnostic.
+ */
 class NotifierService {
+  constructor() {
+    /** @type {Map<string, import('../interfaces/messaging.provider')>} */
+    this.adapters = new Map();
+  }
+
   /**
-   * Send a direct message
-   * @param {string} to - Platform ID
-   * @param {string} message - Content
-   * @param {string} platform - Platform name (default: whatsapp)
+   * Register a messaging adapter for a given platform name.
+   * @param {string} platform - e.g. 'telegram', 'discord'
+   * @param {import('../interfaces/messaging.provider')} adapter
    */
-  async send(to, message, platform = 'telegram') {
+  registerAdapter(platform, adapter) {
+    this.adapters.set(platform, adapter);
+    logger.info(`Notifier: registered adapter for "${platform}"`);
+  }
+
+  /**
+   * Send a plain-text message through the adapter matching `platform`.
+   * @param {string} to - Recipient ID (platform-specific)
+   * @param {string} message - Message body
+   * @param {string} platform - Registered platform name
+   * @returns {Promise<{success: boolean, error?: string}>}
+   */
+  async send(to, message, platform) {
+    const adapter = this.adapters.get(platform);
+    if (!adapter) {
+      const msg = `No adapter registered for platform "${platform}"`;
+      logger.error(`Notifier: ${msg}`);
+      return { success: false, error: msg };
+    }
+
     try {
-      logger.info(`Sending ${platform} message to: ${to}`);
-      
-      if (platform === 'telegram') {
-        // We will require this lazily to avoid circular dependencies if any
-        // or just use a global bot instance if we set it up that way.
-        const telegramBot = require('../telegram');
-        return await telegramBot.sendMessage(to, message);
-      } else if (platform === 'whatsapp') {
-        logger.warn(`WhatsApp notification requested but currently disabled for ${to}`);
-        return { success: false, reason: 'disabled' };
-      }
-      
-      throw new Error(`Unsupported platform: ${platform}`);
+      logger.info(`Sending ${platform} message to ${to}`);
+      return await adapter.send(to, message);
     } catch (error) {
-      logger.error(`Failed to send ${platform} message to ${to}:`, error.message);
+      logger.error(`Notifier: failed to send ${platform} message to ${to}:`, error.message);
       throw error;
     }
   }
 
+  /**
+   * Format and send a structured reminder notification.
+   * @param {object} reminder - Reminder document
+   * @param {object} user - User document
+   * @returns {Promise<{success: boolean, error?: string}>}
+   */
   async sendReminder(reminder, user) {
     const deadline = new Date(reminder.extracted.deadline);
+    const timeStr = deadline.toLocaleString('en-US', {
+      timeZone: user.timezone || 'UTC',
+    });
 
-    const message = `🔔 Reminder!\n\n` +
+    const message =
+      `🔔 Reminder!\n\n` +
       `📝 ${reminder.extracted.task}\n` +
-      `${reminder.extracted.course ? `📚 ${reminder.extracted.course}\n` : ''}` +
-      `⏰ Due: ${deadline.toLocaleString('en-US', { timeZone: user.timezone || 'UTC' })}\n\n` +
-      `${reminder.extracted.notes || ''}`;
+      `⏰ Due: ${timeStr}\n`;
 
-    return await this.send(user.platformId, message, user.platform);
+    return this.send(user.platformId, message, user.platform);
   }
 }
 

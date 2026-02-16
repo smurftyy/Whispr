@@ -1,21 +1,34 @@
-// src/config/redis.js - Redis Client
+// src/config/redis.js — Redis Client
 const Redis = require('ioredis');
 const logger = require('../utils/logger');
 
-const redis = new Redis(process.env.REDIS_URL, {
-  maxRetriesPerRequest: 3,
-  retryStrategy(times) {
-    const delay = Math.min(times * 50, 2000);
-    return delay;
-  },
-});
+/**
+ * Create a configured Redis/IORedis client.
+ * Handles TLS for managed providers (Upstash, etc.) automatically.
+ * @param {string} redisUrl - Redis connection URL (redis:// or rediss://)
+ * @returns {import('ioredis').Redis}
+ */
+function createRedisClient(redisUrl) {
+  const useTls = redisUrl.startsWith('rediss://');
 
-redis.on('connect', () => {
-  logger.info('🔴 Redis connected');
-});
+  const redis = new Redis(redisUrl, {
+    maxRetriesPerRequest: 3,
+    tls: useTls ? { rejectUnauthorized: false } : undefined,
+    retryStrategy(times) {
+      const delay = Math.min(times * 50, 2000);
+      return delay;
+    },
+  });
 
-redis.on('error', (err) => {
-  logger.error('Redis error:', err);
-});
+  redis.on('connect', () => {
+    logger.info('🔴 Redis connected');
+  });
 
-module.exports = redis;
+  redis.on('error', (err) => {
+    logger.error('Redis error:', err.message);
+  });
+
+  return redis;
+}
+
+module.exports = { createRedisClient };
