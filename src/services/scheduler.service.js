@@ -198,7 +198,7 @@ class SchedulerService {
     logger.info('Checking for unscheduled reminders...');
 
     const reminders = await Reminder.find({
-      status: 'pending',
+      status: { $in: ['pending', 'active'] },
       scheduledReminders: { $size: 0 },
       'extracted.deadline': { $gte: new Date() },
     }).populate('userId');

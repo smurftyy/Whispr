@@ -69,6 +69,12 @@ const reminderSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  /** Platform message ID for idempotency (e.g. Telegram message_id). */
+  platformMessageId: {
+    type: String,
+    default: null,
+    index: true,
+  },
 });
 
 // Update timestamp on save
@@ -76,11 +82,11 @@ reminderSchema.pre('save', async function () {
   this.updatedAt = new Date();
 });
 
-// Find active reminders
+// Find active reminders (pending, active, or sent with future deadline)
 reminderSchema.statics.findActive = function (userId) {
   return this.find({
     userId,
-    status: { $in: ['pending', 'sent'] },
+    status: { $in: [REMINDER_STATUS.PENDING, REMINDER_STATUS.ACTIVE, REMINDER_STATUS.SENT] },
     'extracted.deadline': { $gte: new Date() },
   }).sort({ 'extracted.deadline': 1 });
 };

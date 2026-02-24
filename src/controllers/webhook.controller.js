@@ -75,7 +75,7 @@ class WebhookController {
       // --- State machine ---
       switch (user.conversationState) {
         case CONVERSATION_STATES.IDLE:
-          return this._handleIdle(user, messageText, platformId, platform);
+          return this._handleIdle(user, messageText, platformId, platform, messageId);
         case CONVERSATION_STATES.CONFIRM_DETAILS:
           return this._handleConfirmDetails(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_FREQUENCY:
@@ -86,7 +86,7 @@ class WebhookController {
           logger.error(`Unknown state ${user.conversationState} for user ${user._id}`);
           user.conversationState = CONVERSATION_STATES.IDLE;
           await user.save();
-          return this._handleIdle(user, messageText, platformId, platform);
+          return this._handleIdle(user, messageText, platformId, platform, messageId);
       }
     } catch (error) {
       logger.error('Process message error:', error.message);
@@ -104,8 +104,9 @@ class WebhookController {
 
   /**
    * Primary flow: extract → schedule → confirm in a single turn.
+   * @param {string} [messageId] - Platform message ID for idempotency (deduplication).
    */
-  async _handleIdle(user, messageText, platformId, platform) {
+  async _handleIdle(user, messageText, platformId, platform, messageId) {
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
     const extracted = await whisprService.extractReminder(messageText);
@@ -114,12 +115,26 @@ class WebhookController {
       return notifierService.send(platformId, MESSAGES.NO_DEADLINE, platform);
     }
 
+    // Idempotency: avoid duplicate reminders when the same message is delivered twice
+    if (messageId) {
+      const existing = await Reminder.findOne({
+        userId: user._id,
+        platformMessageId: messageId,
+        status: { $in: ['active', 'pending', 'sent'] },
+      });
+      if (existing) {
+        await notifierService.send(platformId, '✅ This reminder was already set.', platform);
+        return;
+      }
+    }
+
     const strategy = extracted.suggestedNotificationStrategy;
     const notificationTiming = STRATEGY_TIMING_MAP[strategy] || STRATEGY_TIMING_MAP[NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE];
 
     const reminder = await Reminder.create({
       userId: user._id,
       originalMessage: messageText,
+      platformMessageId: messageId || undefined,
       extracted: {
         task: extracted.task,
         deadline: extracted.eventTime,
