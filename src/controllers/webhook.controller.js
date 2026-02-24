@@ -145,7 +145,15 @@ class WebhookController {
       notificationTiming,
     });
 
+    // #region agent log
+    fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8524f' }, body: JSON.stringify({ sessionId: 'a8524f', location: 'webhook.controller.js:afterCreate', message: 'Reminder created', data: { reminderId: reminder._id?.toString(), status: reminder.status, deadline: reminder.extracted?.deadline?.toString?.() || reminder.extracted?.deadline, userId: reminder.userId?.toString(), deadlineType: typeof reminder.extracted?.deadline }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
+    // #endregion
+
     await schedulerService.scheduleReminder(reminder, user);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8524f' }, body: JSON.stringify({ sessionId: 'a8524f', location: 'webhook.controller.js:afterSchedule', message: 'After scheduleReminder', data: { reminderId: reminder._id?.toString(), status: reminder.status }, timestamp: Date.now(), hypothesisId: 'H3' }) }).catch(() => {});
+    // #endregion
 
     // Confirmation summary
     const deadline = new Date(extracted.eventTime);
@@ -250,7 +258,15 @@ class WebhookController {
   }
 
   async _handleList(user, platformId, platform) {
+    // #region agent log
+    const now = new Date();
+    fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8524f' }, body: JSON.stringify({ sessionId: 'a8524f', location: 'webhook.controller.js:_handleList:before', message: 'List query', data: { userId: user._id?.toString(), nowISO: now.toISOString() }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
+    // #endregion
     const reminders = await Reminder.findActive(user._id);
+    // #region agent log
+    const anyForUser = await Reminder.find({ userId: user._id }).limit(5).lean();
+    fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'a8524f' }, body: JSON.stringify({ sessionId: 'a8524f', location: 'webhook.controller.js:_handleList:after', message: 'findActive result', data: { findActiveCount: reminders.length, totalForUser: anyForUser.length, sample: anyForUser.slice(0, 3).map((r) => ({ id: r._id?.toString(), status: r.status, deadline: r.extracted?.deadline?.toString?.(), deadlineGteNow: r.extracted?.deadline ? new Date(r.extracted.deadline) >= now : null })) }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
+    // #endregion
     if (reminders.length === 0) {
       return notifierService.send(platformId, MESSAGES.NO_ACTIVE_REMINDERS, platform);
     }
