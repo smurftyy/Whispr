@@ -82,12 +82,13 @@ reminderSchema.pre('save', async function () {
   this.updatedAt = new Date();
 });
 
-// Find active reminders (pending, active, or sent with future deadline)
+// Find active reminders (must include 'active' so newly created reminders appear in /list)
 reminderSchema.statics.findActive = function (userId) {
+  const now = new Date();
   return this.find({
     userId,
-    status: { $in: [REMINDER_STATUS.PENDING, REMINDER_STATUS.ACTIVE, REMINDER_STATUS.SENT] },
-    'extracted.deadline': { $gte: new Date() },
+    status: { $in: ['pending', 'active', 'sent'] },
+    'extracted.deadline': { $gte: now },
   }).sort({ 'extracted.deadline': 1 });
 };
 
