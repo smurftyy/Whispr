@@ -61,9 +61,13 @@ class NotifierService {
       timeZone: user.timezone || 'UTC',
     });
 
+    const displayName = user.name || 'there';
+    const task = reminder.extracted.task;
+
     const message =
-      `🔔 Reminder!\n\n` +
-      `📝 ${reminder.extracted.task}\n` +
+      `Hey ${displayName},\n\n` +
+      `🔔 Reminder!\n` +
+      `It’s time to ${task}.\n\n` +
       `⏰ Due: ${timeStr}\n`;
 
     return this.send(user.platformId, message, user.platform);

@@ -155,7 +155,14 @@ class WebhookController {
       timeStyle: 'short',
     });
 
-    const alertLabel = STRATEGY_LABELS[strategy] || '1 hour before';
+    // For very short-deadline reminders, the scheduler may clamp offsets to 0,
+    // so saying \"30 mins before\" would be misleading. If the deadline is
+    // less than 30 minutes away, describe the alert as happening at the due time.
+    const now = new Date();
+    const diffMins = (deadline.getTime() - now.getTime()) / 60000;
+    const alertLabel = diffMins < 30
+      ? 'at the due time'
+      : (STRATEGY_LABELS[strategy] || '1 hour before');
 
     const summary =
       `✅ Reminder set!\n\n` +
