@@ -216,6 +216,24 @@ class SchedulerService {
       const { reminderId, scheduledReminderIndex } = job.data;
 
       try {
+        // #region agent log
+        fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'a8524f',
+          },
+          body: JSON.stringify({
+            sessionId: 'a8524f',
+            location: 'scheduler.service.js:worker:start',
+            message: 'Processing reminder job',
+            data: { reminderId, scheduledReminderIndex, bullJobId: job.id },
+            hypothesisId: 'W1',
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+
         const reminder = await Reminder.findById(reminderId);
         if (!reminder || reminder.status === 'cancelled') {
           logger.info(`Reminder ${reminderId} cancelled or not found`);
@@ -237,6 +255,29 @@ class SchedulerService {
           reminder.status = 'sent';
           await reminder.save();
         }
+
+        // #region agent log
+        fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': 'a8524f',
+          },
+          body: JSON.stringify({
+            sessionId: 'a8524f',
+            location: 'scheduler.service.js:worker:success',
+            message: 'Reminder job processed successfully',
+            data: {
+              reminderId,
+              scheduledReminderIndex,
+              bullJobId: job.id,
+              status: reminder.status,
+            },
+            hypothesisId: 'W2',
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
 
         logger.info(`Reminder sent: ${reminderId}`);
       } catch (error) {
