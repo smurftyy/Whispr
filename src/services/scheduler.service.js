@@ -104,9 +104,16 @@ class SchedulerService {
         .filter((minutes) => Number.isFinite(minutes) && minutes >= 0),
     )].sort((a, b) => b - a);
 
+    // Clamp notification offsets so short-deadline reminders still fire.
+    // If all configured offsets are in the past relative to now+deadline,
+    // we fall back to a single 0-minute offset (at the deadline).
+    const minutesUntilDeadline = Math.max(0, Math.floor((deadlineMs - nowMs) / (60 * 1000)));
+    const futureTimings = normalizedTimings.filter((m) => m <= minutesUntilDeadline);
+    const effectiveTimings = futureTimings.length > 0 ? futureTimings : [0];
+
     const scheduledReminders = [];
 
-    for (const minutes of normalizedTimings) {
+    for (const minutes of effectiveTimings) {
       const offsetMs = minutes * 60 * 1000;
       const reminderTimeMs = deadlineMs - offsetMs;
       const delayMs = reminderTimeMs - nowMs;
