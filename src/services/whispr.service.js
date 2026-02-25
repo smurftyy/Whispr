@@ -33,7 +33,7 @@ class WhisprService {
    * Falls back to chrono-node if Gemini is unavailable or returns no eventTime.
    *
    * @param {string} messageText - Raw user message
-   * @returns {Promise<{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string}>}
+   * @returns {Promise<{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string, type: string}>}
    */
   async extractReminder(messageText) {
     const now = new Date();
@@ -47,6 +47,7 @@ Extract and infer the following from this message:
 - eventTime: The due date/time (ISO 8601 format). If missing or ambiguous, return null.
 - recurrence: one of: none, daily, weekly. Infer from context (e.g., "every Monday" -> weekly). Default: none.
 - urgency: one of: low, medium, high. 
+ - type: one of: assignment, exam, class, deadline, meeting, call, event, personal, health, other.
   Rules for urgency:
   - high: eventTime is < 30 minutes from now.
   - medium: eventTime is same-day but > 1 hour away.
@@ -67,7 +68,8 @@ Respond ONLY with valid JSON in this exact format:
   "eventTime": "ISO-8601 string or null",
   "recurrence": "none|daily|weekly",
   "urgency": "low|medium|high",
-  "suggestedNotificationStrategy": "immediate_only|30_minutes_before|1_hour_before|1_day_before"
+  "suggestedNotificationStrategy": "immediate_only|30_minutes_before|1_hour_before|1_day_before",
+  "type": "assignment|exam|class|deadline|meeting|call|event|personal|health|other"
 }
 Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
 
@@ -149,6 +151,7 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
       recurrence: 'none',
       urgency: 'medium',
       suggestedNotificationStrategy: '30_minutes_before',
+      type: 'other',
     };
   }
 }

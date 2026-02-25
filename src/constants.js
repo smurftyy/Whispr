@@ -9,6 +9,8 @@ const CONVERSATION_STATES = {
   CONFIRM_DETAILS: 'CONFIRM_DETAILS',
   SELECT_FREQUENCY: 'SELECT_FREQUENCY',
   SELECT_TIMING: 'SELECT_TIMING',
+  SELECT_PERSONA: 'SELECT_PERSONA',
+  SELECT_CONTEXT: 'SELECT_CONTEXT',
 };
 
 // ---------------------------------------------------------------------------
@@ -21,6 +23,7 @@ const COMMANDS = {
   DELETE: '/delete',
   CANCEL: '/cancel',
   CANCEL_NO_SLASH: 'cancel',
+  PROFILE: '/profile',
 };
 
 // ---------------------------------------------------------------------------
@@ -54,7 +57,29 @@ const REMINDER_TYPE = {
   EXAM: 'exam',
   CLASS: 'class',
   DEADLINE: 'deadline',
+  MEETING: 'meeting',
+  CALL: 'call',
   EVENT: 'event',
+  PERSONAL: 'personal',
+  HEALTH: 'health',
+  OTHER: 'other',
+};
+
+const USER_PERSONA = {
+  STUDENT: 'student',
+  BUSINESS: 'business',
+  GENERAL: 'general',
+};
+
+const REMINDER_CONTEXT = {
+  ASSIGNMENTS: 'assignments',
+  EXAMS: 'exams',
+  CLASSES: 'classes',
+  MEETINGS: 'meetings',
+  DEADLINES: 'deadlines',
+  FOLLOW_UPS: 'follow_ups',
+  HEALTH: 'health',
+  PERSONAL: 'personal',
   OTHER: 'other',
 };
 
@@ -85,46 +110,47 @@ const MENU_OPTIONS = {
 
 const MESSAGES = {
   WELCOME:
-    '👋 Welcome to Whispr!\n\n' +
-    'Just send me a message with a task and deadline and I\'ll remind you!\n\n' +
+    'Hi, welcome to Whispr. :)\n\n' +
+    'Send me a task and deadline and I\'ll remind you.\n\n' +
     'Commands:\n/help — Get started',
-  ERROR_GENERIC: '❌ Something went wrong. Please try again or type /help.',
-  PROCESSING: '⏳ Analyzing your message...',
+  ERROR_GENERIC: 'Sorry, something went wrong. Please try again or type /help. :(',
+  PROCESSING: 'One moment, analyzing your message...',
   NO_DEADLINE:
-    '❌ I couldn\'t find a deadline.\n\n' +
+    'I couldn\'t find a deadline.\n\n' +
     'Try including a date/time:\n' +
     '"Submit report by Friday 5pm"',
-  SESSION_Expired: '❌ Session expired. Please start again.',
-  SESSION_INVALID: '❌ Session invalid. Please start over.',
-  CANCELLED: '🚫 Action cancelled. I\'m listening for new reminders.',
-  REMINDER_CANCELLED: '❌ Reminder cancelled.',
-  REMINDER_DELETED: '✅ Reminder deleted.',
-  REMINDER_NOT_FOUND: '❌ Reminder not found.',
-  ERROR_DELETING: '❌ Error deleting.',
-  EDIT_PROMPT: '✏️ Okay, please send the message again with the correct details.',
+  SESSION_Expired: 'Session expired. Please start again. :(',
+  SESSION_INVALID: 'Session invalid. Please start over. :(',
+  CANCELLED: 'Cancelled. I\'m ready for a new reminder. :)',
+  REMINDER_CANCELLED: 'Reminder cancelled. :)',
+  REMINDER_DELETED: 'Reminder deleted. :)',
+  REMINDER_NOT_FOUND: 'Reminder not found. :(',
+  ERROR_DELETING: 'There was a problem deleting that reminder. :(',
+  EDIT_PROMPT: 'Okay, please send the message again with the correct details. :)',
   INVALID_OPTION: 'Please reply with a valid option.',
-  NO_ACTIVE_REMINDERS: '📭 No active reminders.',
-  ALL_SET: '✅ All set! I will remind you as requested.',
+  NO_ACTIVE_REMINDERS: 'No active reminders. :)',
+  ALL_SET: 'All set. I will remind you as requested. :)',
 
   // Dynamic message builders
   helpText: () =>
-    '🔔 Whispr Help\n\n' +
+    'Whispr Help :)\n\n' +
     'Send me tasks or deadlines and I\'ll remind you.\n\n' +
     'Commands:\n' +
     '/list — Show active reminders\n' +
     '/delete [id] — Delete a reminder\n' +
     '/cancel — Cancel current action\n' +
+    '/profile — Update your reminder profile\n' +
     '/help — Show this menu',
 
   confirmDetails: (task, time, urgency) =>
     `Please confirm details:\n\n` +
-    `📝 Task: ${task}\n` +
-    `⏰ Time: ${time}\n` +
-    `🚨 Urgency: ${urgency}\n\n` +
+    `Task: ${task}\n` +
+    `Time: ${time}\n` +
+    `Urgency: ${urgency}\n\n` +
     `Reply with:\n` +
-    `1. ✅ Confirm & Continue\n` +
-    `2. ✏️ Edit (Start Over)\n` +
-    `3. ❌ Cancel`,
+    `1. Confirm & Continue\n` +
+    `2. Edit (Start Over)\n` +
+    `3. Cancel`,
 
   selectFrequency: () =>
     'How often should I remind you?\n\n' +
@@ -140,7 +166,45 @@ const MESSAGES = {
     '4. 1 Day before',
 
   reminderAlert: (task, time) =>
-    `🔔 Reminder!\n\n📝 ${task}\n⏰ Due: ${time}`,
+    `Hey! It\'s time to ${task}. You\'ve got this. :)\n\nDue: ${time}`,
+
+  selectPersona: () =>
+    'Quick setup — which describes you best? :)\n\n' +
+    '1. Student\n' +
+    '2. Business / Working Professional\n' +
+    '3. General / Other\n\n' +
+    'Reply with 1–3 or type "skip".',
+
+  selectContext: (persona) => {
+    if (persona === USER_PERSONA.STUDENT) {
+      return (
+        'What kind of reminders do you set most? :)\n\n' +
+        '1. Assignments / Homework\n' +
+        '2. Exams / Tests\n' +
+        '3. Classes / Lectures\n' +
+        '4. Personal\n\n' +
+        'Reply with 1–4 or type "skip".'
+      );
+    }
+    if (persona === USER_PERSONA.BUSINESS) {
+      return (
+        'What kind of reminders do you set most? :)\n\n' +
+        '1. Meetings\n' +
+        '2. Deadlines\n' +
+        '3. Follow-ups\n' +
+        '4. Personal\n\n' +
+        'Reply with 1–4 or type "skip".'
+      );
+    }
+    return (
+      'What kind of reminders do you set most? :)\n\n' +
+      '1. Personal\n' +
+      '2. Health / Self-care\n' +
+      '3. Work / School\n' +
+      '4. Other\n\n' +
+      'Reply with 1–4 or type "skip".'
+    );
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -154,6 +218,8 @@ module.exports = {
   REMINDER_FREQUENCY,
   REMINDER_URGENCY,
   REMINDER_TYPE,
+  USER_PERSONA,
+  REMINDER_CONTEXT,
   NOTIFICATION_STRATEGIES,
   MENU_OPTIONS,
   MESSAGES,
