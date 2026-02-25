@@ -10,6 +10,8 @@ const {
   COMMANDS,
   MESSAGES,
   NOTIFICATION_STRATEGIES,
+  USER_PERSONA,
+  REMINDER_CONTEXT,
 } = require('../constants');
 
 // ---------------------------------------------------------------------------
@@ -55,7 +57,10 @@ class WebhookController {
       if (!user) {
         user = await User.create({ platform, platformId });
         logger.info(`New user created: ${platform}:${platformId}`);
+        user.conversationState = CONVERSATION_STATES.SELECT_PERSONA;
+        await user.save();
         await notifierService.send(platformId, MESSAGES.WELCOME, platform);
+        await notifierService.send(platformId, MESSAGES.selectPersona(), platform);
       }
 
       await user.updateActivity();
@@ -64,6 +69,7 @@ class WebhookController {
       const command = messageText.trim().toLowerCase();
       if (command === COMMANDS.HELP)   return this._handleHelp(platformId, platform);
       if (command === COMMANDS.LIST)   return this._handleList(user, platformId, platform);
+      if (command === COMMANDS.PROFILE) return this._handleProfile(user, platformId, platform);
       if (command === COMMANDS.CANCEL || command === COMMANDS.CANCEL_NO_SLASH) {
         return this._handleCancel(user, platformId, platform);
       }
@@ -82,6 +88,10 @@ class WebhookController {
           return this._handleSelectFrequency(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_TIMING:
           return this._handleSelectTiming(user, messageText, platformId, platform);
+        case CONVERSATION_STATES.SELECT_PERSONA:
+          return this._handleSelectPersona(user, messageText, platformId, platform);
+        case CONVERSATION_STATES.SELECT_CONTEXT:
+          return this._handleSelectContext(user, messageText, platformId, platform);
         default:
           logger.error(`Unknown state ${user.conversationState} for user ${user._id}`);
           user.conversationState = CONVERSATION_STATES.IDLE;
@@ -123,7 +133,7 @@ class WebhookController {
         status: { $in: ['active', 'pending', 'sent'] },
       });
       if (existing) {
-        await notifierService.send(platformId, '✅ This reminder was already set.', platform);
+        await notifierService.send(platformId, 'This reminder was already set. :)', platform);
         return;
       }
     }
@@ -139,6 +149,7 @@ class WebhookController {
         task: extracted.task,
         deadline: extracted.eventTime,
         urgency: extracted.urgency,
+        type: extracted.type || 'other',
       },
       status: 'active',
       frequency: extracted.recurrence || 'none',
@@ -165,11 +176,11 @@ class WebhookController {
       : (STRATEGY_LABELS[strategy] || '1 hour before');
 
     const summary =
-      `✅ Reminder set!\n\n` +
-      `📝 Task: ${extracted.task}\n` +
-      `⏰ Due: ${timeStr}\n` +
-      `🔔 Alert: ${alertLabel}\n` +
-      `🔄 Repeat: ${extracted.recurrence || 'none'}\n\n` +
+      `Reminder set. :)\n\n` +
+      `Task: ${extracted.task}\n` +
+      `Due: ${timeStr}\n` +
+      `Alert: ${alertLabel}\n` +
+      `Repeat: ${extracted.recurrence || 'none'}\n\n` +
       `Type /list to see all reminders or /cancel to delete.`;
 
     await notifierService.send(platformId, summary, platform);
@@ -248,6 +259,94 @@ class WebhookController {
     return notifierService.send(platformId, MESSAGES.ALL_SET, platform);
   }
 
+  async _handleSelectPersona(user, messageText, platformId, platform) {
+    const input = messageText.trim().toLowerCase();
+
+    if (input === 'skip') {
+      user.persona = USER_PERSONA.GENERAL;
+      user.reminderContext = REMINDER_CONTEXT.OTHER;
+      user.conversationState = CONVERSATION_STATES.IDLE;
+      await user.save();
+      return notifierService.send(platformId, 'Got it. You can update this anytime with /profile.', platform);
+    }
+
+    const keywordMap = {
+      student: USER_PERSONA.STUDENT,
+      business: USER_PERSONA.BUSINESS,
+      professional: USER_PERSONA.BUSINESS,
+      work: USER_PERSONA.BUSINESS,
+      general: USER_PERSONA.GENERAL,
+      other: USER_PERSONA.GENERAL,
+    };
+
+    const choiceMap = {
+      '1': USER_PERSONA.STUDENT,
+      '2': USER_PERSONA.BUSINESS,
+      '3': USER_PERSONA.GENERAL,
+    };
+
+    const persona = choiceMap[input] || keywordMap[input];
+    if (!persona) {
+      return notifierService.send(platformId, MESSAGES.selectPersona(), platform);
+    }
+
+    user.persona = persona;
+    if (persona === USER_PERSONA.GENERAL) {
+      user.reminderContext = REMINDER_CONTEXT.OTHER;
+      user.conversationState = CONVERSATION_STATES.IDLE;
+      await user.save();
+      return notifierService.send(platformId, 'Thanks! You can update this anytime with /profile.', platform);
+    }
+
+    user.conversationState = CONVERSATION_STATES.SELECT_CONTEXT;
+    await user.save();
+    return notifierService.send(platformId, MESSAGES.selectContext(persona), platform);
+  }
+
+  async _handleSelectContext(user, messageText, platformId, platform) {
+    const input = messageText.trim().toLowerCase();
+
+    if (input === 'skip') {
+      user.reminderContext = REMINDER_CONTEXT.OTHER;
+      user.conversationState = CONVERSATION_STATES.IDLE;
+      await user.save();
+      return notifierService.send(platformId, 'All set. You can update this anytime with /profile.', platform);
+    }
+
+    const contextMaps = {
+      [USER_PERSONA.STUDENT]: {
+        '1': REMINDER_CONTEXT.ASSIGNMENTS,
+        '2': REMINDER_CONTEXT.EXAMS,
+        '3': REMINDER_CONTEXT.CLASSES,
+        '4': REMINDER_CONTEXT.PERSONAL,
+      },
+      [USER_PERSONA.BUSINESS]: {
+        '1': REMINDER_CONTEXT.MEETINGS,
+        '2': REMINDER_CONTEXT.DEADLINES,
+        '3': REMINDER_CONTEXT.FOLLOW_UPS,
+        '4': REMINDER_CONTEXT.PERSONAL,
+      },
+      [USER_PERSONA.GENERAL]: {
+        '1': REMINDER_CONTEXT.PERSONAL,
+        '2': REMINDER_CONTEXT.HEALTH,
+        '3': REMINDER_CONTEXT.OTHER,
+        '4': REMINDER_CONTEXT.OTHER,
+      },
+    };
+
+    const persona = user.persona || USER_PERSONA.GENERAL;
+    const context = (contextMaps[persona] || contextMaps[USER_PERSONA.GENERAL])[input];
+
+    if (!context) {
+      return notifierService.send(platformId, MESSAGES.selectContext(persona), platform);
+    }
+
+    user.reminderContext = context;
+    user.conversationState = CONVERSATION_STATES.IDLE;
+    await user.save();
+    return notifierService.send(platformId, 'Thanks! You can update this anytime with /profile.', platform);
+  }
+
   // -------------------------------------------------------------------------
   // Command handlers
   // -------------------------------------------------------------------------
@@ -256,18 +355,24 @@ class WebhookController {
     return notifierService.send(platformId, MESSAGES.helpText(), platform);
   }
 
+  async _handleProfile(user, platformId, platform) {
+    user.conversationState = CONVERSATION_STATES.SELECT_PERSONA;
+    await user.save();
+    return notifierService.send(platformId, MESSAGES.selectPersona(), platform);
+  }
+
   async _handleList(user, platformId, platform) {
     const reminders = await Reminder.findActive(user._id);
     if (reminders.length === 0) {
       return notifierService.send(platformId, MESSAGES.NO_ACTIVE_REMINDERS, platform);
     }
 
-    let response = '📋 Active Reminders:\n\n';
+    let response = 'Active reminders:\n\n';
     reminders.forEach((r, i) => {
       const deadline = new Date(r.extracted.deadline);
       const timeStr = deadline.toLocaleString('en-US', { timeZone: user.timezone || 'UTC' });
       const shortId = r._id.toString().slice(-6);
-      response += `${i + 1}. ${r.extracted.task}\n   ⏰ ${timeStr}\n   ID: ${shortId}\n\n`;
+      response += `${i + 1}. ${r.extracted.task}\n   Due: ${timeStr}\n   ID: ${shortId}\n\n`;
     });
     response += 'Use /delete [id] to remove.';
 

@@ -1,7 +1,7 @@
 // src/models/User.js - User Schema
 const mongoose = require('mongoose');
 
-const { CONVERSATION_STATES } = require('../constants');
+const { CONVERSATION_STATES, USER_PERSONA, REMINDER_CONTEXT } = require('../constants');
 
 const userSchema = new mongoose.Schema({
   // Platform-agnostic identity
@@ -22,6 +22,16 @@ const userSchema = new mongoose.Schema({
   },
   name: {
     type: String,
+    default: null,
+  },
+  persona: {
+    type: String,
+    enum: Object.values(USER_PERSONA),
+    default: null,
+  },
+  reminderContext: {
+    type: String,
+    enum: Object.values(REMINDER_CONTEXT),
     default: null,
   },
   timezone: {

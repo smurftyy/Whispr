@@ -63,14 +63,64 @@ class NotifierService {
 
     const displayName = user.name || 'there';
     const task = reminder.extracted.task;
+    const friendlyAction = this._buildFriendlyAction(reminder, user);
+    const friendlyNote = this._buildFriendlyNote(user);
 
     const message =
-      `Hey ${displayName},\n\n` +
-      `🔔 Reminder!\n` +
-      `It’s time to ${task}.\n\n` +
-      `⏰ Due: ${timeStr}\n`;
+      `Hey ${displayName}! :)\n\n` +
+      `It\'s time to ${friendlyAction}.\n` +
+      (friendlyNote ? `${friendlyNote}\n` : '') +
+      `\nDue: ${timeStr}\n`;
 
     return this.send(user.platformId, message, user.platform);
+  }
+
+  _buildFriendlyAction(reminder, user) {
+    const task = reminder.extracted.task || 'take care of that';
+    const type = reminder.extracted.type || 'other';
+    const text = task.toLowerCase();
+
+    if (/(sleep|nap|rest|bed)/i.test(text)) return 'get some rest';
+    if (/(eat|lunch|dinner|breakfast|meal)/i.test(text)) return 'grab a bite';
+    if (/(drink water|hydrate|hydration)/i.test(text)) return 'hydrate';
+
+    switch (type) {
+      case 'assignment':
+        return 'work on your assignment';
+      case 'exam':
+        return 'prep for your exam';
+      case 'class':
+        return 'get ready for class';
+      case 'meeting':
+        return 'get ready for your meeting';
+      case 'call':
+        return 'join your call';
+      case 'deadline':
+        return `wrap up ${task}`;
+      case 'event':
+        return `get ready for ${task}`;
+      case 'health':
+        return `take care of ${task}`;
+      case 'personal':
+        return `${task}`;
+      default:
+        break;
+    }
+
+    if (user?.reminderContext === 'meetings') return `get ready for ${task}`;
+    if (user?.reminderContext === 'deadlines') return `wrap up ${task}`;
+    if (user?.reminderContext === 'assignments') return `work on ${task}`;
+    if (user?.reminderContext === 'exams') return `prep for ${task}`;
+    if (user?.reminderContext === 'classes') return `get ready for ${task}`;
+
+    return `${task}`;
+  }
+
+  _buildFriendlyNote(user) {
+    if (!user?.persona) return '';
+    if (user.persona === 'student') return 'You\'ve got this. :)';
+    if (user.persona === 'business') return 'Quick nudge before your work item. :)';
+    return '';
   }
 }
 
