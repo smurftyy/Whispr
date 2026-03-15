@@ -182,12 +182,17 @@ class WebhookController {
       : (STRATEGY_LABELS[strategy] || '1 hour before');
 
     const summary = schedulingFailed
-      ? `Got it! I'll remind you to ${extracted.task} at ${timeStr}. :)\n\n` +
-        `(Scheduling had an issue — your reminder is saved and will retry shortly.)`
-      : `Got it! I'll remind you to ${extracted.task} at ${timeStr}. :)\n\n` +
+      ? `Reminder set! :)\n\n` +
+        `Task: ${extracted.task}\n` +
+        `Due: ${timeStr}\n\n` +
+        `(Scheduling had a hiccup — your reminder is saved and will retry shortly.)\n\n` +
+        `Type /list to see all your reminders.`
+      : `Reminder set! :)\n\n` +
+        `Task: ${extracted.task}\n` +
+        `Due: ${timeStr}\n` +
         `Alert: ${alertLabel}\n` +
         `Repeat: ${extracted.recurrence || 'none'}\n\n` +
-        `Type /list to see all reminders or /cancel to delete.`;
+        `Type /list to view all reminders or /delete [id] to remove one.`;
 
     await notifierService.send(platformId, summary, platform);
   }

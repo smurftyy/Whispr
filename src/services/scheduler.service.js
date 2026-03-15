@@ -91,15 +91,14 @@ class SchedulerService {
       const reminderTimeMs = deadlineMs - offsetMs;
       const delayMs = reminderTimeMs - nowMs;
 
-      if (delayMs >= 0) {
-        const reminderTime = new Date(reminderTimeMs);
-        await this._enqueueJob(reminder._id, scheduledReminders.length, Math.max(0, delayMs));
-        scheduledReminders.push({ scheduledFor: reminderTime, sent: false });
-        logger.info(`Scheduled reminder for ${reminderTime.toISOString()} (${minutes}m notice)`);
+      const reminderTime = new Date(reminderTimeMs);
+      const effectiveDelay = Math.max(0, delayMs);
+      await this._enqueueJob(reminder._id, scheduledReminders.length, effectiveDelay);
+      scheduledReminders.push({ scheduledFor: reminderTime, sent: false });
+      if (delayMs < 0) {
+        logger.info(`Reminder ${reminder._id} overdue by ${Math.abs(Math.round(delayMs / 60000))}m — firing immediately`);
       } else {
-        logger.info(
-          `Skipped reminder offset ${minutes}m for ${reminder._id}: computed notification time is in the past`,
-        );
+        logger.info(`Scheduled reminder for ${reminderTime.toISOString()} (${minutes}m notice)`);
       }
     }
 
@@ -193,13 +192,22 @@ class SchedulerService {
   async _checkAndScheduleReminders() {
     logger.info('Checking for unscheduled reminders...');
 
+    const now = new Date();
     const reminders = await Reminder.find({
       status: { $in: ['pending', 'active'] },
       $or: [
+        // Never scheduled at all
         { scheduledReminders: { $size: 0 } },
-        { scheduledReminders: { $not: { $elemMatch: { sent: true } } } },
+        // Has unsent slots, but none are scheduled in the future (missed delivery)
+        {
+          $and: [
+            { scheduledReminders: { $elemMatch: { sent: false } } },
+            { scheduledReminders: { $not: { $elemMatch: { sent: false, scheduledFor: { $gt: now } } } } },
+          ],
+        },
       ],
-      'extracted.deadline': { $gte: new Date() },
+      // Include reminders past deadline by up to 24h to catch missed deliveries
+      'extracted.deadline': { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
     }).populate('userId');
 
     for (const reminder of reminders) {
