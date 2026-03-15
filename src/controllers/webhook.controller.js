@@ -100,11 +100,11 @@ class WebhookController {
       }
     } catch (error) {
       logger.error('Process message error:', error.message);
-      await notifierService.send(
-        platformId,
-        MESSAGES.ERROR_GENERIC,
-        'telegram',
-      );
+      try {
+        await notifierService.send(platformId, MESSAGES.ERROR_GENERIC, 'telegram');
+      } catch (sendErr) {
+        logger.error('Failed to send error response:', sendErr.message);
+      }
     }
   }
 
@@ -156,9 +156,15 @@ class WebhookController {
       notificationTiming,
     });
 
-    await schedulerService.scheduleReminder(reminder, user);
+    let schedulingFailed = false;
+    try {
+      await schedulerService.scheduleReminder(reminder, user);
+    } catch (schedErr) {
+      schedulingFailed = true;
+      logger.error(`Scheduling failed for reminder ${reminder._id}:`, schedErr.message);
+    }
 
-    // Confirmation summary
+    // Confirmation summary — always sent regardless of scheduling outcome
     const deadline = new Date(extracted.eventTime);
     const timeStr = deadline.toLocaleString('en-US', {
       timeZone: user.timezone || 'UTC',
@@ -167,7 +173,7 @@ class WebhookController {
     });
 
     // For very short-deadline reminders, the scheduler may clamp offsets to 0,
-    // so saying \"30 mins before\" would be misleading. If the deadline is
+    // so saying "30 mins before" would be misleading. If the deadline is
     // less than 30 minutes away, describe the alert as happening at the due time.
     const now = new Date();
     const diffMins = (deadline.getTime() - now.getTime()) / 60000;
@@ -175,13 +181,13 @@ class WebhookController {
       ? 'at the due time'
       : (STRATEGY_LABELS[strategy] || '1 hour before');
 
-    const summary =
-      `Reminder set. :)\n\n` +
-      `Task: ${extracted.task}\n` +
-      `Due: ${timeStr}\n` +
-      `Alert: ${alertLabel}\n` +
-      `Repeat: ${extracted.recurrence || 'none'}\n\n` +
-      `Type /list to see all reminders or /cancel to delete.`;
+    const summary = schedulingFailed
+      ? `Got it! I'll remind you to ${extracted.task} at ${timeStr}. :)\n\n` +
+        `(Scheduling had an issue — your reminder is saved and will retry shortly.)`
+      : `Got it! I'll remind you to ${extracted.task} at ${timeStr}. :)\n\n` +
+        `Alert: ${alertLabel}\n` +
+        `Repeat: ${extracted.recurrence || 'none'}\n\n` +
+        `Type /list to see all reminders or /cancel to delete.`;
 
     await notifierService.send(platformId, summary, platform);
   }

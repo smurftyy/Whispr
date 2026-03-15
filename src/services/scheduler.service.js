@@ -195,7 +195,10 @@ class SchedulerService {
 
     const reminders = await Reminder.find({
       status: { $in: ['pending', 'active'] },
-      scheduledReminders: { $size: 0 },
+      $or: [
+        { scheduledReminders: { $size: 0 } },
+        { scheduledReminders: { $not: { $elemMatch: { sent: true } } } },
+      ],
       'extracted.deadline': { $gte: new Date() },
     }).populate('userId');
 
