@@ -64,8 +64,7 @@ class TelegramAdapter extends MessagingProvider {
    */
   async send(to, message) {
     if (!this.bot) {
-      logger.error('TelegramAdapter: Bot not initialized — cannot send');
-      return { success: false, error: 'Bot not initialized' };
+      throw new Error('Bot not initialized');
     }
 
     try {
@@ -73,7 +72,7 @@ class TelegramAdapter extends MessagingProvider {
       return { success: true };
     } catch (error) {
       logger.error(`TelegramAdapter: Failed to send to ${to}:`, error.message);
-      return { success: false, error: error.message };
+      throw error;
     }
   }
 

@@ -37,7 +37,7 @@ class NotifierService {
     if (!adapter) {
       const msg = `No adapter registered for platform "${platform}"`;
       logger.error(`Notifier: ${msg}`);
-      return { success: false, error: msg };
+      throw new Error(msg);
     }
 
     try {

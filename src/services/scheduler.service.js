@@ -17,9 +17,6 @@ const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 /** Maximum backoff delay for failed Bull jobs (ms). */
 const MAX_BACKOFF_DELAY_MS = 2000;
 
-/** Threshold for scheduling an "immediate" reminder (ms). */
-const IMMEDIATE_THRESHOLD_MS = 60 * 1000; // 1 minute
-
 // ---------------------------------------------------------------------------
 // Queue setup
 // ---------------------------------------------------------------------------
@@ -63,30 +60,6 @@ class SchedulerService {
    * @returns {Promise<number>} Number of jobs successfully scheduled
    */
   async scheduleReminder(reminder, user) {
-    // #region agent log
-    fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Debug-Session-Id': 'a8524f',
-      },
-      body: JSON.stringify({
-        sessionId: 'a8524f',
-        location: 'scheduler.service.js:scheduleReminder:start',
-        message: 'Scheduling reminder',
-        data: {
-          reminderId: reminder._id?.toString(),
-          rawDeadline: reminder.extracted?.deadline,
-          status: reminder.status,
-          notificationTiming: reminder.notificationTiming,
-          userId: reminder.userId?.toString(),
-        },
-        hypothesisId: 'S1',
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-
     const deadlineMs = new Date(reminder.extracted.deadline).getTime();
     const nowMs = Date.now();
 
@@ -118,97 +91,20 @@ class SchedulerService {
       const reminderTimeMs = deadlineMs - offsetMs;
       const delayMs = reminderTimeMs - nowMs;
 
-      if (delayMs > 0) {
+      if (delayMs >= 0) {
         const reminderTime = new Date(reminderTimeMs);
-        await this._enqueueJob(reminder._id, scheduledReminders.length, delayMs);
+        await this._enqueueJob(reminder._id, scheduledReminders.length, Math.max(0, delayMs));
         scheduledReminders.push({ scheduledFor: reminderTime, sent: false });
         logger.info(`Scheduled reminder for ${reminderTime.toISOString()} (${minutes}m notice)`);
-        // #region agent log
-        fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'a8524f',
-          },
-          body: JSON.stringify({
-            sessionId: 'a8524f',
-            location: 'scheduler.service.js:scheduleReminder:enqueue',
-            message: 'Enqueued reminder job',
-            data: {
-              reminderId: reminder._id?.toString(),
-              minutes,
-              reminderTimeISO: reminderTime.toISOString(),
-              delayMs,
-            },
-            hypothesisId: 'S2',
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
-      } else if (
-        minutes === 0
-        && deadlineMs >= nowMs
-        && (deadlineMs - nowMs) <= IMMEDIATE_THRESHOLD_MS
-      ) {
-        // "immediate_only" — deadline is close enough that queueing now is safer than delay math
-        await this._enqueueJob(reminder._id, scheduledReminders.length, 0);
-        scheduledReminders.push({ scheduledFor: new Date(nowMs), sent: false });
-        logger.info('Scheduled immediate reminder');
       } else {
         logger.info(
           `Skipped reminder offset ${minutes}m for ${reminder._id}: computed notification time is in the past`,
         );
-        // #region agent log
-        fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'a8524f',
-          },
-          body: JSON.stringify({
-            sessionId: 'a8524f',
-            location: 'scheduler.service.js:scheduleReminder:skip',
-            message: 'Skipped offset in the past',
-            data: {
-              reminderId: reminder._id?.toString(),
-              minutes,
-              reminderTimeMs,
-              delayMs,
-              nowMs,
-              deadlineMs,
-            },
-            hypothesisId: 'S3',
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
       }
     }
 
     reminder.scheduledReminders = scheduledReminders;
     await reminder.save();
-
-    // #region agent log
-    fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Debug-Session-Id': 'a8524f',
-      },
-      body: JSON.stringify({
-        sessionId: 'a8524f',
-        location: 'scheduler.service.js:scheduleReminder:end',
-        message: 'Finished scheduling reminder',
-        data: {
-          reminderId: reminder._id?.toString(),
-          scheduledCount: scheduledReminders.length,
-          scheduledFor: scheduledReminders.map((s) => s.scheduledFor?.toISOString?.()),
-        },
-        hypothesisId: 'S1',
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     return scheduledReminders.length;
   }
@@ -223,24 +119,6 @@ class SchedulerService {
       const { reminderId, scheduledReminderIndex } = job.data;
 
       try {
-        // #region agent log
-        fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'a8524f',
-          },
-          body: JSON.stringify({
-            sessionId: 'a8524f',
-            location: 'scheduler.service.js:worker:start',
-            message: 'Processing reminder job',
-            data: { reminderId, scheduledReminderIndex, bullJobId: job.id },
-            hypothesisId: 'W1',
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
-
         const reminder = await Reminder.findById(reminderId);
         if (!reminder || reminder.status === 'cancelled') {
           logger.info(`Reminder ${reminderId} cancelled or not found`);
@@ -262,29 +140,6 @@ class SchedulerService {
           reminder.status = 'sent';
           await reminder.save();
         }
-
-        // #region agent log
-        fetch('http://127.0.0.1:7543/ingest/92796e88-fe6d-43e0-8ab0-e0e7db31ad70', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Debug-Session-Id': 'a8524f',
-          },
-          body: JSON.stringify({
-            sessionId: 'a8524f',
-            location: 'scheduler.service.js:worker:success',
-            message: 'Reminder job processed successfully',
-            data: {
-              reminderId,
-              scheduledReminderIndex,
-              bullJobId: job.id,
-              status: reminder.status,
-            },
-            hypothesisId: 'W2',
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
 
         logger.info(`Reminder sent: ${reminderId}`);
       } catch (error) {
