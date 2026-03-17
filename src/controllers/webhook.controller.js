@@ -133,11 +133,17 @@ class WebhookController {
 
     // Idempotency: avoid duplicate reminders when the same message is delivered twice
     if (messageId) {
-      const existing = await Reminder.findOne({
-        userId: user._id,
-        platformMessageId: messageId,
-        status: { $in: ['active', 'pending', 'sent'] },
-      });
+      let existing;
+      try {
+        existing = await Reminder.findOne({
+          userId: user._id,
+          platformMessageId: messageId,
+          status: { $in: ['active', 'pending', 'sent'] },
+        });
+        console.error('[DEBUG] Idempotency check done, existing:', existing?._id ?? 'none');
+      } catch (idempotencyErr) {
+        console.error('[DEBUG] Idempotency check threw:', idempotencyErr);
+      }
       if (existing) {
         await notifierService.send(platformId, 'This reminder was already set. :)', platform);
         return;
@@ -146,21 +152,30 @@ class WebhookController {
 
     const strategy = extracted.suggestedNotificationStrategy;
     const notificationTiming = STRATEGY_TIMING_MAP[strategy] || STRATEGY_TIMING_MAP[NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE];
+    console.error('[DEBUG] Strategy:', strategy, '| notificationTiming:', notificationTiming);
+    console.error('[DEBUG] Reminder.create payload — task:', extracted.task, '| deadline:', extracted.eventTime, '| type:', extracted.type, '| recurrence:', extracted.recurrence);
 
-    const reminder = await Reminder.create({
-      userId: user._id,
-      originalMessage: messageText,
-      platformMessageId: messageId || undefined,
-      extracted: {
-        task: extracted.task,
-        deadline: extracted.eventTime,
-        urgency: extracted.urgency,
-        type: extracted.type || 'other',
-      },
-      status: 'active',
-      frequency: extracted.recurrence || 'none',
-      notificationTiming,
-    });
+    let reminder;
+    try {
+      reminder = await Reminder.create({
+        userId: user._id,
+        originalMessage: messageText,
+        platformMessageId: messageId || undefined,
+        extracted: {
+          task: extracted.task,
+          deadline: extracted.eventTime,
+          urgency: extracted.urgency,
+          type: extracted.type || 'other',
+        },
+        status: 'active',
+        frequency: extracted.recurrence || 'none',
+        notificationTiming,
+      });
+      console.error('[DEBUG] Reminder.create succeeded, id:', reminder._id);
+    } catch (createErr) {
+      console.error('[DEBUG] Reminder.create FAILED:', createErr);
+      return notifierService.send(platformId, MESSAGES.ERROR_GENERIC, platform);
+    }
 
     let schedulingFailed = false;
     try {
@@ -171,12 +186,20 @@ class WebhookController {
     }
 
     // Confirmation summary — always sent regardless of scheduling outcome
-    const deadline = new Date(extracted.eventTime);
-    const timeStr = deadline.toLocaleString('en-US', {
-      timeZone: user.timezone || 'UTC',
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    });
+    let deadline, timeStr;
+    try {
+      deadline = new Date(extracted.eventTime);
+      timeStr = deadline.toLocaleString('en-US', {
+        timeZone: user.timezone || 'UTC',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+      console.error('[DEBUG] Date formatting succeeded:', timeStr);
+    } catch (dateErr) {
+      console.error('[DEBUG] Date formatting FAILED:', dateErr);
+      deadline = new Date(extracted.eventTime);
+      timeStr = extracted.eventTime;
+    }
 
     // For very short-deadline reminders, the scheduler may clamp offsets to 0,
     // so saying "30 mins before" would be misleading. If the deadline is
@@ -200,7 +223,13 @@ class WebhookController {
         `Repeat: ${extracted.recurrence || 'none'}\n\n` +
         `Type /list to view all reminders or /delete [id] to remove one.`;
 
-    await notifierService.send(platformId, summary, platform);
+    console.error('[DEBUG] Sending confirmation to', platformId);
+    try {
+      await notifierService.send(platformId, summary, platform);
+      console.error('[DEBUG] Confirmation sent successfully');
+    } catch (sendErr) {
+      console.error('[DEBUG] Confirmation send FAILED:', sendErr);
+    }
   }
 
   /** Legacy: handle confirmation step (kept for backward compat). */
