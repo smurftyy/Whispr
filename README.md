@@ -90,9 +90,33 @@ npm run dev
 | `REDIS_URL`          | ✅       | Redis URL (`redis://` or `rediss://` for TLS)           |
 | `GEMINI_API_KEY`     | ✅       | Google AI API key                                       |
 | `TELEGRAM_BOT_TOKEN` | ✅\*     | Telegram Bot token (required if using Telegram adapter) |
-| `GEMINI_MODEL`       | ❌       | Model name override (default: `gemini-2.0-flash`)       |
+| `GEMINI_MODEL`       | ❌       | Model name override (default: `gemini-2.5-flash`)       |
 | `PORT`               | ❌       | HTTP server port (default: `3000`)                      |
 | `NODE_ENV`           | ❌       | `development` or `production`                           |
+
+---
+
+## Bot Commands
+
+| Command | Description |
+| --- | --- |
+| _(any message)_ | Create a reminder from natural language |
+| `/list` | Show all active reminders |
+| `/delete <id>` | Delete a reminder by ID |
+| `/cancel` | Cancel the current action |
+| `/profile` | Update your reminder profile |
+| `/help` | Show available commands |
+
+---
+
+## Webhook vs Polling
+
+| Mode | When | How |
+| --- | --- | --- |
+| **Polling** | `NODE_ENV=development` | Bot polls Telegram for updates every few seconds — no public URL needed |
+| **Webhook** | `NODE_ENV=production` | Telegram pushes updates to `https://<your-domain>/api/webhook/telegram` — requires a public HTTPS URL |
+
+Set `NODE_ENV=production` and ensure your hosting platform exposes a public HTTPS URL. On Render, this is automatic.
 
 ---
 
@@ -110,7 +134,11 @@ See [`src/adapters/discord.adapter.js`](src/adapters/discord.adapter.js) for a d
 
 ## Deployment
 
-### Railway (recommended)
+### Render (recommended)
+
+The project includes `nixpacks.toml` for zero-config Render deployment. Set your environment variables in the Render dashboard and set `NODE_ENV=production`.
+
+### Railway
 
 The project includes `railway.json` and `nixpacks.toml` for one-click Railway deployment. Set your environment variables in the Railway dashboard.
 
