@@ -208,7 +208,7 @@ class SchedulerService {
       ],
       // Include reminders past deadline by up to 24h to catch missed deliveries
       'extracted.deadline': { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
-cka    }).populate('userId');
+    }).populate('userId');
 
     for (const reminder of reminders) {
       try {
