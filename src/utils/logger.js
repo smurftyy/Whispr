@@ -10,11 +10,7 @@ const logger = {
   warn: (...args) => {
     console.warn(`[WARN] [${new Date().toISOString()}]`, ...args);
   },
-  debug: (...args) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log(`[DEBUG] [${new Date().toISOString()}]`, ...args);
-    }
-  },
+  debug: () => {},
 };
 
 module.exports = logger;
