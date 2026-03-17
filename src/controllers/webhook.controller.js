@@ -140,9 +140,8 @@ class WebhookController {
           platformMessageId: messageId,
           status: { $in: ['active', 'pending', 'sent'] },
         });
-        console.error('[DEBUG] Idempotency check done, existing:', existing?._id ?? 'none');
       } catch (idempotencyErr) {
-        console.error('[DEBUG] Idempotency check threw:', idempotencyErr);
+        logger.error('Idempotency check error:', idempotencyErr.message);
       }
       if (existing) {
         await notifierService.send(platformId, 'This reminder was already set. :)', platform);
@@ -152,8 +151,6 @@ class WebhookController {
 
     const strategy = extracted.suggestedNotificationStrategy;
     const notificationTiming = STRATEGY_TIMING_MAP[strategy] || STRATEGY_TIMING_MAP[NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE];
-    console.error('[DEBUG] Strategy:', strategy, '| notificationTiming:', notificationTiming);
-    console.error('[DEBUG] Reminder.create payload — task:', extracted.task, '| deadline:', extracted.eventTime, '| type:', extracted.type, '| recurrence:', extracted.recurrence);
 
     let reminder;
     try {
@@ -171,20 +168,17 @@ class WebhookController {
         frequency: extracted.recurrence || 'none',
         notificationTiming,
       });
-      console.error('[DEBUG] Reminder.create succeeded, id:', reminder._id);
     } catch (createErr) {
-      console.error('[DEBUG] Reminder.create FAILED:', createErr);
+      logger.error('Reminder.create failed:', createErr.message);
       return notifierService.send(platformId, MESSAGES.ERROR_GENERIC, platform);
     }
 
     let schedulingFailed = false;
     try {
-      console.log('[DEBUG] About to schedule reminder', reminder._id.toString());
       await schedulerService.scheduleReminder(reminder, user);
-      console.log('[DEBUG] Schedule complete for reminder', reminder._id.toString());
     } catch (schedErr) {
       schedulingFailed = true;
-      console.error(`[DEBUG] scheduleReminder threw for ${reminder._id}:`, schedErr);
+      logger.error(`Scheduling failed for reminder ${reminder._id}:`, schedErr.message);
     }
 
     // Confirmation summary — always sent regardless of scheduling outcome
@@ -196,9 +190,8 @@ class WebhookController {
         dateStyle: 'medium',
         timeStyle: 'short',
       });
-      console.error('[DEBUG] Date formatting succeeded:', timeStr);
     } catch (dateErr) {
-      console.error('[DEBUG] Date formatting FAILED:', dateErr);
+      logger.error('Date formatting error:', dateErr.message);
       deadline = new Date(extracted.eventTime);
       timeStr = extracted.eventTime;
     }
@@ -225,12 +218,10 @@ class WebhookController {
         `Repeat: ${extracted.recurrence || 'none'}\n\n` +
         `Type /list to view all reminders or /delete [id] to remove one.`;
 
-    console.error('[DEBUG] Sending confirmation to', platformId);
     try {
       await notifierService.send(platformId, summary, platform);
-      console.error('[DEBUG] Confirmation sent successfully');
     } catch (sendErr) {
-      console.error('[DEBUG] Confirmation send FAILED:', sendErr);
+      logger.error('Failed to send confirmation:', sendErr.message);
     }
   }
 

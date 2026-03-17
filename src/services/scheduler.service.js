@@ -254,20 +254,14 @@ class SchedulerService {
    * @param {number} delay - delay in ms
    */
   async _enqueueJob(reminderId, index, delay) {
-    try {
-      const job = await reminderQueue.add(
-        { reminderId: reminderId.toString(), scheduledReminderIndex: index },
-        {
-          delay,
-          attempts: 3,
-          backoff: { type: 'exponential', delay: MAX_BACKOFF_DELAY_MS },
-        },
-      );
-      console.log(`[DEBUG] Enqueued job ${job.id} for reminder ${reminderId}, delay: ${delay}ms`);
-    } catch (enqueueErr) {
-      console.error('[DEBUG] reminderQueue.add FAILED:', enqueueErr);
-      throw enqueueErr;
-    }
+    await reminderQueue.add(
+      { reminderId: reminderId.toString(), scheduledReminderIndex: index },
+      {
+        delay,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: MAX_BACKOFF_DELAY_MS },
+      },
+    );
   }
 }
 
