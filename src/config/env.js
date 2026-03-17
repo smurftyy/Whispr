@@ -1,7 +1,7 @@
 // src/config/env.js — Centralized Environment Configuration
 // All process.env access is consolidated here. No other file should read process.env directly.
 
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 
 /** @type {'development' | 'production' | 'test'} */
 const NODE_ENV = process.env.NODE_ENV || 'development';
