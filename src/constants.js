@@ -114,6 +114,7 @@ const MESSAGES = {
     'Send me a task and deadline and I\'ll remind you.\n\n' +
     'Commands:\n/help — Get started',
   ERROR_GENERIC: 'Sorry, something went wrong. Please try again or type /help. :(',
+  ERROR_AI_UNAVAILABLE: "Sorry, I'm a bit overwhelmed right now. Please try again in a minute. :(",
   PROCESSING: 'One moment, analyzing your message...',
   NO_DEADLINE:
     'I couldn\'t find a deadline.\n\n' +

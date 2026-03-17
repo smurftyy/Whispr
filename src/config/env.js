@@ -27,7 +27,7 @@ const env = {
 
   /** Gemini AI */
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
 
   /** Telegram */
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,

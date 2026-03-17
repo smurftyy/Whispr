@@ -119,7 +119,13 @@ class WebhookController {
   async _handleIdle(user, messageText, platformId, platform, messageId) {
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
-    const extracted = await whisprService.extractReminder(messageText);
+    let extracted;
+    try {
+      extracted = await whisprService.extractReminder(messageText);
+    } catch (error) {
+      logger.error('Gemini extraction failed:', error.message);
+      return notifierService.send(platformId, MESSAGES.ERROR_AI_UNAVAILABLE, platform);
+    }
 
     if (!extracted.eventTime) {
       return notifierService.send(platformId, MESSAGES.NO_DEADLINE, platform);

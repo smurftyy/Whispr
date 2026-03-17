@@ -88,7 +88,7 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
       return extracted;
     } catch (error) {
       logger.error('Extraction error:', error.message);
-      return this._fallbackExtraction(messageText, now);
+      throw error;
     }
   }
 
