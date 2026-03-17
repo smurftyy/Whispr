@@ -9,6 +9,8 @@ Send a natural language message → Get a scheduled reminder. No forms. No menus
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
 
+**[Try it on Telegram →](https://t.me/whisprrbot)**
+
 </div>
 
 ---
@@ -20,6 +22,18 @@ Whispr is an intelligent reminder system that understands natural language. Inst
 > "Remind me to submit my assignment tomorrow at 5pm"
 
 Whispr extracts the task, deadline, urgency, and notification strategy using **Google Gemini AI**, then schedules a reminder through a **Redis-backed Bull queue** and delivers it via the user's messaging platform.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Runtime | Node.js 18+ |
+| AI Extraction | Gemini 2.5 Flash |
+| Messaging | Telegram Bot API |
+| Job Queue | Bull + Redis |
+| Database | MongoDB |
 
 ---
 
