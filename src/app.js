@@ -29,11 +29,6 @@ app.get('/', (req, res) => {
   res.send('Whispr Backend with Telegram Transport');
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
 // Error handler
 app.use((err, req, res, next) => {
   logger.error('Error:', err);

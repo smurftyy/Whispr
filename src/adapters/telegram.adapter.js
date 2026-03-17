@@ -5,7 +5,11 @@ const logger = require('../utils/logger');
 
 /**
  * Telegram adapter implementing the MessagingProvider interface.
- * Handles bot initialization, message polling, and outbound delivery.
+ * Handles bot initialization, message delivery, and inbound routing.
+ *
+ * Modes:
+ *   - Webhook (production): start(webhookUrl) — Telegram POSTs updates to the app
+ *   - Polling (development): start() — bot polls Telegram for updates
  */
 class TelegramAdapter extends MessagingProvider {
   /**
@@ -19,10 +23,12 @@ class TelegramAdapter extends MessagingProvider {
   }
 
   /**
-   * Initialize the Telegram bot and start polling for messages.
+   * Initialize the bot in webhook or polling mode.
    * Safe to call multiple times — subsequent calls are no-ops.
+   *
+   * @param {string | null} webhookUrl - Full HTTPS URL for webhook mode; omit for polling
    */
-  async start() {
+  async start(webhookUrl = null) {
     if (this.bot) return;
     if (!this.token) {
       logger.error('TelegramAdapter: Missing bot token — adapter disabled');
@@ -30,30 +36,42 @@ class TelegramAdapter extends MessagingProvider {
     }
 
     try {
-      this.bot = new TelegramBot(this.token, { polling: false }); // Start with polling off
-      
-      // Clean up any old webhooks to avoid 409 Conflicts
-      await this.bot.deleteWebHook();
-      
-      // Start polling manually
-      await this.bot.startPolling();
-      
-      logger.info('🚀 Telegram bot initialized and polling...');
+      this.bot = new TelegramBot(this.token, { polling: false });
 
-      this.bot.on('polling_error', (error) => {
-        // Detailed logging for common Telegram errors
-        const message = error.message || 'Unknown polling error';
-        const code = error.code || 'UNKNOWN';
-        
-        logger.error(`Telegram polling error [${code}]: ${message}`);
-        
-        if (message.includes('409 Conflict')) {
-          logger.error('💡 TIP: Another instance of this bot is already running or a webhook is set. Disable other instances or remove the webhook.');
-        }
-      });
+      if (webhookUrl) {
+        await this.bot.setWebHook(webhookUrl);
+        logger.info('[BOOT] Telegram: webhook mode');
+      } else {
+        await this.bot.deleteWebHook();
+        await this.bot.startPolling();
+        logger.info('[BOOT] Telegram: polling mode');
+
+        this.bot.on('polling_error', (error) => {
+          const message = error.message || 'Unknown polling error';
+          const code = error.code || 'UNKNOWN';
+          logger.error(`Telegram polling error [${code}]: ${message}`);
+          if (message.includes('409 Conflict')) {
+            logger.error('Another instance is polling. Switch to webhook mode in production.');
+          }
+        });
+      }
     } catch (error) {
       logger.error('Failed to initialize Telegram bot:', error.message);
     }
+  }
+
+  /**
+   * Process a raw Telegram update object received via webhook.
+   * Triggers the same 'message' event as polling, so onMessage() works in both modes.
+   *
+   * @param {object} update - Parsed Telegram Update object from req.body
+   */
+  processUpdate(update) {
+    if (!this.bot) {
+      logger.error('TelegramAdapter: Bot not initialized — cannot process update');
+      return;
+    }
+    this.bot.processUpdate(update);
   }
 
   /**
