@@ -179,10 +179,12 @@ class WebhookController {
 
     let schedulingFailed = false;
     try {
+      console.log('[DEBUG] About to schedule reminder', reminder._id.toString());
       await schedulerService.scheduleReminder(reminder, user);
+      console.log('[DEBUG] Schedule complete for reminder', reminder._id.toString());
     } catch (schedErr) {
       schedulingFailed = true;
-      logger.error(`Scheduling failed for reminder ${reminder._id}:`, schedErr.message);
+      console.error(`[DEBUG] scheduleReminder threw for ${reminder._id}:`, schedErr);
     }
 
     // Confirmation summary — always sent regardless of scheduling outcome

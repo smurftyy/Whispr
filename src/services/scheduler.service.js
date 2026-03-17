@@ -31,6 +31,11 @@ const reminderQueue = new Queue('reminders', env.REDIS_URL, {
   },
 });
 
+reminderQueue.client.on('connect', () => console.log('[REDIS] Client connected'));
+reminderQueue.client.on('error', (err) => console.error('[REDIS] Client error:', err));
+reminderQueue.eclient.on('connect', () => console.log('[REDIS] Subscriber connected'));
+reminderQueue.eclient.on('error', (err) => console.error('[REDIS] Subscriber error:', err));
+
 /**
  * SchedulerService — Owns all time-math and job-queue interactions.
  *
@@ -249,14 +254,20 @@ class SchedulerService {
    * @param {number} delay - delay in ms
    */
   async _enqueueJob(reminderId, index, delay) {
-    await reminderQueue.add(
-      { reminderId: reminderId.toString(), scheduledReminderIndex: index },
-      {
-        delay,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: MAX_BACKOFF_DELAY_MS },
-      },
-    );
+    try {
+      const job = await reminderQueue.add(
+        { reminderId: reminderId.toString(), scheduledReminderIndex: index },
+        {
+          delay,
+          attempts: 3,
+          backoff: { type: 'exponential', delay: MAX_BACKOFF_DELAY_MS },
+        },
+      );
+      console.log(`[DEBUG] Enqueued job ${job.id} for reminder ${reminderId}, delay: ${delay}ms`);
+    } catch (enqueueErr) {
+      console.error('[DEBUG] reminderQueue.add FAILED:', enqueueErr);
+      throw enqueueErr;
+    }
   }
 }
 
