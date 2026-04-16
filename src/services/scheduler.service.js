@@ -167,12 +167,8 @@ class SchedulerService {
 
   /** Start an hourly sweep for "pending" reminders that have no scheduled jobs. */
   _startPeriodicCheck() {
-    setInterval(async () => {
-      try {
-        await this._checkAndScheduleReminders();
-      } catch (error) {
-        logger.error('Periodic check error:', error.message);
-      }
+    setInterval(() => {
+      this._checkAndScheduleReminders().catch(err => logger.error('Periodic check failed:', err));
     }, PERIODIC_CHECK_INTERVAL_MS);
 
     logger.info('⏰ Periodic scheduler started (runs every hour)');
@@ -215,11 +211,32 @@ class SchedulerService {
       'extracted.deadline': { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
     }).populate('userId');
 
+    // Fetch all jobs currently in the queue (waiting, delayed, or active) once
+    // so we can skip reminders that are already queued and avoid double-notifications
+    // on server restart.
+    let queuedReminderIds = new Set();
+    try {
+      const existingJobs = await reminderQueue.getJobs(['waiting', 'delayed', 'active']);
+      for (const job of existingJobs) {
+        if (job.data && job.data.reminderId) {
+          queuedReminderIds.add(job.data.reminderId);
+        }
+      }
+    } catch (error) {
+      logger.error('Could not fetch existing queue jobs for deduplication:', error.message);
+      // Proceed without deduplication rather than skipping rehydration entirely
+    }
+
     for (const reminder of reminders) {
       try {
-        if (reminder.userId) {
-          await this.scheduleReminder(reminder, reminder.userId);
+        if (!reminder.userId) continue;
+
+        if (queuedReminderIds.has(reminder._id.toString())) {
+          logger.info(`Reminder ${reminder._id} already queued — skipping rehydration`);
+          continue;
         }
+
+        await this.scheduleReminder(reminder, reminder.userId);
       } catch (error) {
         logger.error(`Error scheduling reminder ${reminder._id}:`, error.message);
       }

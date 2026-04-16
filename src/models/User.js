@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema({
   platform: {
     type: String,
     required: true,
-    default: 'whatsapp', // Default to whatsapp for migration
+    default: 'telegram', // Default to whatsapp for migration
   },
   platformId: {
     type: String,

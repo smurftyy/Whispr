@@ -39,7 +39,7 @@ const env = {
 // ---------------------------------------------------------------------------
 // Validation — fail fast on missing critical variables
 // ---------------------------------------------------------------------------
-const REQUIRED = ['MONGODB_URI', 'REDIS_URL', 'GEMINI_API_KEY'];
+const REQUIRED = ['MONGODB_URI', 'REDIS_URL', 'GEMINI_API_KEY', 'TELEGRAM_BOT_TOKEN'];
 
 const missing = REQUIRED.filter((key) => !env[key]);
 if (missing.length > 0) {
