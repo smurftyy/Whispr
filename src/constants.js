@@ -21,6 +21,7 @@ const COMMANDS = {
   CANCEL: '/cancel',
   CANCEL_NO_SLASH: 'cancel',
   PROFILE: '/profile',
+  START: '/start',
 };
 
 // ---------------------------------------------------------------------------

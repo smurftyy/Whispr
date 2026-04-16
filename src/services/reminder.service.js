@@ -20,6 +20,18 @@ const STRATEGY_TIMING_MAP = {
   [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]: [1440],
 };
 
+function normalizeExtracted(extracted) {
+  return {
+    task: extracted.task || 'Untitled reminder',
+    eventTime: extracted.eventTime || extracted.deadline || null,
+    recurrence: extracted.recurrence || REMINDER_FREQUENCY.NONE,
+    urgency: extracted.urgency,
+    suggestedNotificationStrategy:
+      extracted.suggestedNotificationStrategy || NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE,
+    type: extracted.type || REMINDER_TYPE.OTHER,
+  };
+}
+
 class ReminderService {
   async createFromText(userId, platformId, platform, messageText) {
     const user = await User.findById(userId);
@@ -39,6 +51,21 @@ class ReminderService {
       throw wrapped;
     }
 
+    return this.createFromExtracted(user, extracted, messageText);
+  }
+
+  async createFromExtracted(userOrId, extractedInput, originalMessage = '') {
+    const user = typeof userOrId === 'object' && userOrId?._id
+      ? userOrId
+      : await User.findById(userOrId);
+
+    if (!user) {
+      const error = new Error('User not found');
+      error.code = 'USER_NOT_FOUND';
+      throw error;
+    }
+
+    const extracted = normalizeExtracted(extractedInput);
     if (!extracted.eventTime) {
       const error = new Error('No deadline found in reminder text');
       error.code = 'NO_DEADLINE';
@@ -51,7 +78,7 @@ class ReminderService {
 
     const reminder = await Reminder.create({
       userId: user._id,
-      originalMessage: messageText,
+      originalMessage: originalMessage || extracted.task,
       extracted: {
         task: extracted.task,
         deadline: extracted.eventTime,
@@ -141,6 +168,41 @@ class ReminderService {
     user.draftReminderId = null;
     user.conversationState = CONVERSATION_STATES.IDLE;
     await user.save();
+  }
+
+  serializeReminder(reminder, user) {
+    const deadline = new Date(reminder.extracted.deadline);
+    const timezone = user?.timezone || 'UTC';
+
+    return {
+      id: reminder._id.toString(),
+      shortId: reminder._id.toString().slice(-6),
+      task: reminder.extracted.task,
+      deadline: reminder.extracted.deadline,
+      deadlineLabel: deadline.toLocaleString('en-US', { timeZone: timezone }),
+      type: reminder.extracted.type,
+      urgency: reminder.extracted.urgency,
+      status: reminder.status,
+      frequency: reminder.frequency,
+      notificationTiming: reminder.notificationTiming,
+      scheduledReminders: reminder.scheduledReminders,
+      createdAt: reminder.createdAt,
+      updatedAt: reminder.updatedAt,
+    };
+  }
+
+  serializeUserProfile(user) {
+    return {
+      id: user._id.toString(),
+      platform: user.platform,
+      platformId: user.platformId,
+      name: user.name,
+      persona: user.persona,
+      reminderContext: user.reminderContext,
+      timezone: user.timezone,
+      preferences: user.preferences,
+      isActive: user.isActive,
+    };
   }
 }
 

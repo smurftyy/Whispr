@@ -1,4 +1,4 @@
-// src/services/whispr.service.js — AI Extraction Engine (Gemini)
+// src/services/ai.service.js — AI Extraction Engine
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const chrono = require('chrono-node');
 const env = require('../config/env');
@@ -44,7 +44,7 @@ const URGENCY_MEDIUM_THRESHOLD_MIN = 1440; // 24 hours
  *
  * The service never computes scheduling delays — that is the scheduler's job.
  */
-class WhisprService {
+class AIService {
   /**
    * Extract a structured reminder from natural-language text.
    * Falls back to chrono-node if Gemini is unavailable or returns no eventTime.
@@ -177,4 +177,4 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
   }
 }
 
-module.exports = new WhisprService();
+module.exports = new AIService();
