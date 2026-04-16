@@ -1,13 +1,12 @@
 // src/app.js - Express Application
 const express = require('express');
-const bodyParser = require('body-parser');
 const logger = require('./utils/logger');
 
 const app = express();
 
 // Middleware
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
 // Request logging
 app.use((req, res, next) => {

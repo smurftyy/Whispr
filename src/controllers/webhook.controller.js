@@ -37,9 +37,6 @@ const STRATEGY_LABELS = {
  * The conversation state machine is intentionally minimal:
  *   IDLE → (message) → schedule immediately if extraction succeeds
  *                     → ask for clarification only when eventTime is null
- *
- * Legacy multi-step states (CONFIRM_DETAILS, SELECT_FREQUENCY, SELECT_TIMING)
- * are kept for backward compatibility but are no longer entered by the primary flow.
  */
 class WebhookController {
   /**
@@ -82,12 +79,6 @@ class WebhookController {
       switch (user.conversationState) {
         case CONVERSATION_STATES.IDLE:
           return this._handleIdle(user, messageText, platformId, platform, messageId);
-        case CONVERSATION_STATES.CONFIRM_DETAILS:
-          return this._handleConfirmDetails(user, messageText, platformId, platform);
-        case CONVERSATION_STATES.SELECT_FREQUENCY:
-          return this._handleSelectFrequency(user, messageText, platformId, platform);
-        case CONVERSATION_STATES.SELECT_TIMING:
-          return this._handleSelectTiming(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_PERSONA:
           return this._handleSelectPersona(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_CONTEXT:
@@ -117,6 +108,11 @@ class WebhookController {
    * @param {string} [messageId] - Platform message ID for idempotency (deduplication).
    */
   async _handleIdle(user, messageText, platformId, platform, messageId) {
+    if (messageText.length > 500) {
+      await notifierService.send(platformId, MESSAGES.INPUT_TOO_LONG, platform);
+      return;
+    }
+
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
     let extracted;
@@ -223,79 +219,6 @@ class WebhookController {
     } catch (sendErr) {
       logger.error('Failed to send confirmation:', sendErr.message);
     }
-  }
-
-  /** Legacy: handle confirmation step (kept for backward compat). */
-  async _handleConfirmDetails(user, messageText, platformId, platform) {
-    const choice = messageText.trim();
-    const reminder = await Reminder.findById(user.draftReminderId);
-
-    if (!reminder) {
-      user.conversationState = CONVERSATION_STATES.IDLE;
-      await user.save();
-      return notifierService.send(platformId, MESSAGES.SESSION_Expired, platform);
-    }
-
-    if (choice === '1') {
-      user.conversationState = CONVERSATION_STATES.SELECT_FREQUENCY;
-      await user.save();
-      return notifierService.send(platformId, MESSAGES.selectFrequency(), platform);
-    }
-    if (choice === '2') {
-      await this._cancelDraft(user, reminder);
-      return notifierService.send(platformId, MESSAGES.EDIT_PROMPT, platform);
-    }
-    if (choice === '3') {
-      await this._cancelDraft(user, reminder);
-      return notifierService.send(platformId, MESSAGES.REMINDER_CANCELLED, platform);
-    }
-
-    return notifierService.send(platformId, MESSAGES.INVALID_OPTION, platform);
-  }
-
-  /** Legacy: frequency selection. */
-  async _handleSelectFrequency(user, messageText, platformId, platform) {
-    const choice = messageText.trim();
-    const reminder = await Reminder.findById(user.draftReminderId);
-    if (!reminder) return this._resetState(user, platformId, platform);
-
-    const freqMap = { '1': 'none', '2': 'daily', '3': 'weekly' };
-    const frequency = freqMap[choice];
-    if (!frequency) {
-      return notifierService.send(platformId, 'Please reply with 1 (Once), 2 (Daily), or 3 (Weekly).', platform);
-    }
-
-    reminder.frequency = frequency;
-    await reminder.save();
-    user.conversationState = CONVERSATION_STATES.SELECT_TIMING;
-    await user.save();
-
-    return notifierService.send(platformId, MESSAGES.selectTiming(), platform);
-  }
-
-  /** Legacy: timing selection. */
-  async _handleSelectTiming(user, messageText, platformId, platform) {
-    const choice = messageText.trim();
-    const reminder = await Reminder.findById(user.draftReminderId);
-    if (!reminder) return this._resetState(user, platformId, platform);
-
-    const timingMap = { '1': [60], '2': [1440, 60], '3': [30], '4': [1440] };
-    const timing = timingMap[choice];
-    if (!timing) {
-      return notifierService.send(platformId, 'Please reply with 1–4 to select timing.', platform);
-    }
-
-    reminder.notificationTiming = timing;
-    reminder.status = 'active';
-    await reminder.save();
-
-    await schedulerService.scheduleReminder(reminder, user);
-
-    user.conversationState = CONVERSATION_STATES.IDLE;
-    user.draftReminderId = null;
-    await user.save();
-
-    return notifierService.send(platformId, MESSAGES.ALL_SET, platform);
   }
 
   async _handleSelectPersona(user, messageText, platformId, platform) {

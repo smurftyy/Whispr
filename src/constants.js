@@ -6,9 +6,6 @@
 
 const CONVERSATION_STATES = {
   IDLE: 'IDLE',
-  CONFIRM_DETAILS: 'CONFIRM_DETAILS',
-  SELECT_FREQUENCY: 'SELECT_FREQUENCY',
-  SELECT_TIMING: 'SELECT_TIMING',
   SELECT_PERSONA: 'SELECT_PERSONA',
   SELECT_CONTEXT: 'SELECT_CONTEXT',
 };
@@ -95,16 +92,6 @@ const NOTIFICATION_STRATEGIES = {
 };
 
 // ---------------------------------------------------------------------------
-// Menu Options (legacy multi-step flow)
-// ---------------------------------------------------------------------------
-
-const MENU_OPTIONS = {
-  CONFIRM_DETAILS: { CONFIRM: '1', EDIT: '2', CANCEL: '3' },
-  FREQUENCY: { ONCE: '1', DAILY: '2', WEEKLY: '3' },
-  TIMING: { ONE_HOUR: '1', TWENTY_FOUR_ONE_HOUR: '2', THIRTY_MINUTES: '3', ONE_DAY: '4' },
-};
-
-// ---------------------------------------------------------------------------
 // User-Facing Messages
 // ---------------------------------------------------------------------------
 
@@ -115,6 +102,7 @@ const MESSAGES = {
     'Commands:\n/help — Get started',
   ERROR_GENERIC: 'Sorry, something went wrong. Please try again or type /help. :(',
   ERROR_AI_UNAVAILABLE: "Sorry, I'm a bit overwhelmed right now. Please try again in a minute. :(",
+  INPUT_TOO_LONG: 'Your message is too long. Please keep reminders under 500 characters.',
   PROCESSING: 'One moment, analyzing your message...',
   NO_DEADLINE:
     'I couldn\'t find a deadline.\n\n' +
@@ -142,29 +130,6 @@ const MESSAGES = {
     '/cancel — Cancel current action\n' +
     '/profile — Update your reminder profile\n' +
     '/help — Show this menu',
-
-  confirmDetails: (task, time, urgency) =>
-    `Please confirm details:\n\n` +
-    `Task: ${task}\n` +
-    `Time: ${time}\n` +
-    `Urgency: ${urgency}\n\n` +
-    `Reply with:\n` +
-    `1. Confirm & Continue\n` +
-    `2. Edit (Start Over)\n` +
-    `3. Cancel`,
-
-  selectFrequency: () =>
-    'How often should I remind you?\n\n' +
-    '1. Just Once (Default)\n' +
-    '2. Daily\n' +
-    '3. Weekly',
-
-  selectTiming: () =>
-    'When do you want to be notified?\n\n' +
-    '1. 1 hour before\n' +
-    '2. 24 hours & 1 hour before\n' +
-    '3. 30 minutes before\n' +
-    '4. 1 Day before',
 
   reminderAlert: (task, time) =>
     `Hey! It\'s time to ${task}. You\'ve got this. :)\n\nDue: ${time}`,
@@ -222,6 +187,5 @@ module.exports = {
   USER_PERSONA,
   REMINDER_CONTEXT,
   NOTIFICATION_STRATEGIES,
-  MENU_OPTIONS,
   MESSAGES,
 };

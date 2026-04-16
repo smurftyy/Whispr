@@ -5,17 +5,6 @@
 // APIs directly — it routes through the NotifierService which delegates
 // to the registered adapter.
 
-/**
- * Abstract base class for messaging platform adapters.
- *
- * Implementing a new adapter:
- *   1. Create `src/adapters/<platform>.adapter.js`
- *   2. Extend this class
- *   3. Implement `send()` and `onMessage()`
- *   4. Register the adapter in `server.js` via `notifierService.registerAdapter()`
- *
- * See `src/adapters/discord.adapter.js` for a documented stub example.
- */
 class MessagingProvider {
   /**
    * Send a message to a recipient.

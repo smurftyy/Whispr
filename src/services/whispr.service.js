@@ -36,6 +36,10 @@ class WhisprService {
    * @returns {Promise<{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string, type: string}>}
    */
   async extractReminder(messageText) {
+    if (messageText.length > 500) {
+      throw new Error(`Input too long: ${messageText.length} characters (max 500)`);
+    }
+
     const now = new Date();
 
     try {

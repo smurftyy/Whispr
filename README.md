@@ -142,7 +142,6 @@ Whispr is **transport-agnostic**. To switch from Telegram to another platform:
 2. Update `server.js` to instantiate and register your adapter
 3. That's it — core logic, scheduling, and AI extraction remain untouched
 
-See [`src/adapters/discord.adapter.js`](src/adapters/discord.adapter.js) for a documented stub.
 
 ---
 
@@ -223,7 +222,7 @@ whispr/
 
 - [ ] Add unit tests for `WhisprService.extractReminder()`
 - [ ] Implement the Discord adapter (`src/adapters/discord.adapter.js`)
-- [ ] Add WhatsApp adapter using the Baileys library
+
 - [ ] Support quiet hours (don't send notifications between 10pm–7am)
 - [ ] Add `/snooze` command to postpone a reminder
 
