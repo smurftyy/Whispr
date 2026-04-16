@@ -5,7 +5,7 @@ const User = require('../src/models/User');
 const Reminder = require('../src/models/Reminder');
 const webhookController = require('../src/controllers/webhook.controller');
 const notifierService = require('../src/services/notifier.service');
-const whisprService = require('../src/services/whispr.service');
+const whisprService = require('../src/services/ai.service');
 const schedulerService = require('../src/services/scheduler.service');
 
 // Mock Services

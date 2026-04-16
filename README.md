@@ -1,248 +1,79 @@
-<div align="center">
+# Whispr
 
-# 🔔 Whispr
+## What is Whispr
+Whispr is an AI-powered reminder assistant that lives in Telegram and turns natural language messages into scheduled reminders. It uses Gemini NLP to extract reminder details from free-form text and delivers notifications through a Bull/Redis queue.
 
-**Transport-agnostic conversational reminder engine powered by Gemini AI.**
-
-Send a natural language message → Get a scheduled reminder. No forms. No menus.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
-
-**[Try it on Telegram →](https://t.me/whisprrbot)**
-
-</div>
-
----
-
-## What is Whispr?
-
-Whispr is an intelligent reminder system that understands natural language. Instead of filling out forms, users send messages like:
-
-> "Remind me to submit my assignment tomorrow at 5pm"
-
-Whispr extracts the task, deadline, urgency, and notification strategy using **Google Gemini AI**, then schedules a reminder through a **Redis-backed Bull queue** and delivers it via the user's messaging platform.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-| --- | --- |
-| Runtime | Node.js 18+ |
-| AI Extraction | Gemini 2.5 Flash |
-| Messaging | Telegram Bot API |
-| Job Queue | Bull + Redis |
-| Database | MongoDB |
-
----
+## Features
+- Parses natural language reminder requests such as "remind me to submit my assignment tomorrow 9am"
+- Schedules multi-timing notifications such as 24 hours before and 1 hour before the same deadline
+- Rehydrates pending reminders on startup so missed jobs are recovered after a server restart
+- Exposes a Telegram Mini App dashboard workflow that is currently in progress
+- Keeps the core architecture platform-agnostic with Telegram live and the Discord stub removed
 
 ## Architecture
-
-```
-┌─────────────┐     ┌──────────────────────────────────────────────┐
-│   Telegram   │     │                  Whispr Core                 │
-│   Discord    │────▶│                                              │
-│   (any)      │     │  ┌────────────┐  ┌──────────┐  ┌─────────┐  │
-│              │     │  │  Webhook    │  │  Whispr   │  │Scheduler│  │
-│  Adapters    │◀────│  │ Controller │─▶│ Service   │─▶│ Service │  │
-│              │     │  │            │  │ (Gemini)  │  │ (Bull)  │  │
-│              │     │  └────────────┘  └──────────┘  └────┬────┘  │
-│              │     │                                     │       │
-│              │     │  ┌──────────┐   ┌─────────────┐     │       │
-│              │◀────│  │ Notifier │◀──│ Bull Worker  │◀────┘       │
-│              │     │  │ Service  │   │ (processes)  │            │
-└─────────────┘     │  └──────────┘   └─────────────┘            │
-                    │        │                                     │
-                    └────────┼─────────────────────────────────────┘
-                             │
-                    ┌────────┴────────┐
-                    │    MongoDB      │    Redis
-                    │  (Persistence)  │  (Job Queue)
-                    └─────────────────┘
+```text
+Telegram Bot (webhook)
+└─ webhook.controller    ← bot state machine
+└─ ReminderService       ← business logic
+└─ AIService             ← Gemini NLP extraction + Claude stub
+└─ SchedulerService      ← Bull/Redis job queue
+└─ NotifierService       ← platform adapter routing
+└─ TelegramAdapter
+REST API (Express)
+└─ /api/reminders        ← Mini App endpoints (in progress)
+└─ telegramAuth          ← initData HMAC middleware (in progress)
 ```
 
----
+Whispr has two entry points: Telegram updates flow through the bot controller, while the Express API is reserved for the Mini App surface.
 
-## Core Concepts
+## Local Development Setup
 
-| Concept                      | Description                                                                                                  |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Adapter**                  | A messaging platform integration (Telegram, Discord, etc.) that implements the `MessagingProvider` interface |
-| **Extraction**               | Gemini AI parses natural language into structured JSON (task, time, urgency, strategy)                       |
-| **Strategy**                 | AI-inferred notification timing: `immediate_only`, `30_minutes_before`, `1_hour_before`, `1_day_before`      |
-| **Deterministic Scheduling** | All time math happens in the backend — Gemini picks the strategy, the scheduler computes the delay           |
-| **Rehydration**              | On server restart, pending reminders are automatically re-queued from the database                           |
+### Prerequisites
+- Node.js 20+
+- MongoDB
+- Redis
 
----
+### Steps
+1. Clone the repo
+2. `cp .env.example .env` and fill in values
+3. `npm install`
+4. `npm run dev`
 
-## Quick Start
-
-```bash
-# 1. Clone
-git clone https://github.com/smurftyy/Whispr.git
-cd Whispr
-
-# 2. Install
-npm install
-
-# 3. Configure
-cp .env.example .env
-# Edit .env with your credentials (see Environment Variables below)
-
-# 4. Run
-npm run dev
-```
-
----
-
-## Environment Variables
-
-| Variable             | Required | Description                                             |
-| -------------------- | -------- | ------------------------------------------------------- |
-| `MONGODB_URI`        | ✅       | MongoDB connection string                               |
-| `REDIS_URL`          | ✅       | Redis URL (`redis://` or `rediss://` for TLS)           |
-| `GEMINI_API_KEY`     | ✅       | Google AI API key                                       |
-| `TELEGRAM_BOT_TOKEN` | ✅\*     | Telegram Bot token (required if using Telegram adapter) |
-| `GEMINI_MODEL`       | ❌       | Model name override (default: `gemini-2.5-flash`)       |
-| `PORT`               | ❌       | HTTP server port (default: `3000`)                      |
-| `NODE_ENV`           | ❌       | `development` or `production`                           |
-
----
-
-## Bot Commands
-
-| Command | Description |
-| --- | --- |
-| _(any message)_ | Create a reminder from natural language |
-| `/list` | Show all active reminders |
-| `/delete <id>` | Delete a reminder by ID |
-| `/cancel` | Cancel the current action |
-| `/profile` | Update your reminder profile |
-| `/help` | Show available commands |
-
----
-
-## Webhook vs Polling
-
-| Mode | When | How |
+### Environment Variables
+| Name | Required | Description |
 | --- | --- | --- |
-| **Polling** | `NODE_ENV=development` | Bot polls Telegram for updates every few seconds — no public URL needed |
-| **Webhook** | `NODE_ENV=production` | Telegram pushes updates to `https://<your-domain>/api/webhook/telegram` — requires a public HTTPS URL |
+| `NODE_ENV` | No | Runtime mode. Use `development` locally and `production` in deployment. |
+| `PORT` | No | HTTP port for the Express server. Defaults to `3000`. |
+| `MONGODB_URI` | Yes | MongoDB connection string used for users and reminders. |
+| `REDIS_URL` | Yes | Redis connection string used by Bull for delayed job delivery. |
+| `GEMINI_API_KEY` | Yes | API key for Gemini reminder extraction. |
+| `GEMINI_MODEL` | No | Gemini model override. Defaults to `gemini-2.5-flash`. |
+| `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot token used by the live adapter. |
+| `TZ` | No | Optional server timezone override. |
+| `MINI_APP_URL` | Yes | Required for Mini App launch button. |
 
-Set `NODE_ENV=production` and ensure your hosting platform exposes a public HTTPS URL. On Render, this is automatic.
+## Production Deployment
+Production is deployed on Render. `WEBHOOK_URL` must be set to the public URL for the Telegram webhook endpoint; in `NODE_ENV=production` the app automatically registers the Telegram webhook, and in development it uses polling.
 
----
+## Telegram Mini App Setup (in progress)
+1. Set `MINI_APP_URL` in environment
+2. Run `/setmenubutton` via BotFather pointing to the Mini App URL
+3. The bot will also present a dashboard button after each reminder creation
 
-## Switching Messaging Platforms
+## API Reference (in progress)
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/reminders` | List reminders for the Mini App dashboard |
+| `POST` | `/api/reminders/extract` | Run AI extraction before reminder creation |
+| `POST` | `/api/reminders` | Create a reminder from Mini App input |
+| `DELETE` | `/api/reminders/:id` | Delete a reminder |
+| `GET` | `/api/profile` | Fetch profile and preference data |
 
-Whispr is **transport-agnostic**. To switch from Telegram to another platform:
-
-1. Create a new adapter in `src/adapters/` extending `MessagingProvider`
-2. Update `server.js` to instantiate and register your adapter
-3. That's it — core logic, scheduling, and AI extraction remain untouched
-
-
----
-
-## Deployment
-
-### Render (recommended)
-
-The project includes `nixpacks.toml` for zero-config Render deployment. Set your environment variables in the Render dashboard and set `NODE_ENV=production`.
-
-### Railway
-
-The project includes `railway.json` and `nixpacks.toml` for one-click Railway deployment. Set your environment variables in the Railway dashboard.
-
-### Docker
-
-```bash
-docker build -t whispr .
-docker run -d --env-file .env -p 3000:3000 whispr
-```
-
-### Any VPS
-
-```bash
-npm ci --omit=dev
-NODE_ENV=production node server.js
-```
-
----
-
-## Project Structure
-
-```
-whispr/
-├── server.js                    # Entry point — wires adapters + starts server
-├── src/
-│   ├── adapters/                # Messaging platform adapters
-│   │   ├── telegram.adapter.js  # Telegram (active)
-│   │   └── discord.adapter.js   # Discord (stub/example)
-│   ├── config/
-│   │   ├── env.js               # Centralized environment config
-│   │   ├── database.js          # MongoDB connection
-│   │   └── redis.js             # Redis client factory
-│   ├── constants.js             # Enums, commands, messages
-│   ├── controllers/
-│   │   └── webhook.controller.js # Message handler + state machine
-│   ├── interfaces/
-│   │   └── messaging.provider.js # Adapter interface contract
-│   ├── models/
-│   │   ├── Reminder.js          # Reminder schema
-│   │   └── User.js              # User schema
-│   ├── services/
-│   │   ├── notifier.service.js  # Platform-agnostic message router
-│   │   ├── scheduler.service.js # Bull queue + deterministic scheduling
-│   │   └── whispr.service.js    # Gemini AI extraction engine
-│   └── utils/
-│       └── logger.js            # Structured logger
-├── .env.example                 # Environment template
-├── Dockerfile                   # Production container
-├── package.json
-└── README.md
-```
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/):
-   - `feat:` for new features
-   - `fix:` for bug fixes
-   - `docs:` for documentation
-   - `refactor:` for code restructuring
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Good First Issues
-
-- [ ] Add unit tests for `WhisprService.extractReminder()`
-- [ ] Implement the Discord adapter (`src/adapters/discord.adapter.js`)
-
-- [ ] Support quiet hours (don't send notifications between 10pm–7am)
-- [ ] Add `/snooze` command to postpone a reminder
-
----
+See the [Notion PRD](https://www.notion.so/your-workspace/whispr-prd) for full specs.
 
 ## Roadmap
-
-- [x] Gemini-powered natural language extraction
-- [x] Deterministic scheduling with Bull + Redis
-- [x] Telegram transport
-- [x] One-shot reminder creation (no unnecessary follow-ups)
-- [x] Server restart resilience (job rehydration)
-- [ ] Multi-platform support (Discord, WhatsApp)
-- [ ] Recurring reminder execution (daily/weekly)
-- [ ] User timezone auto-detection
-- [ ] Web dashboard for reminder management
-- [ ] Rate limiting and abuse prevention
-
----
-
-## License
-
-[MIT](LICENSE) — free for personal and commercial use.
+- [ ] Recurring reminder re-enqueue (daily/weekly)
+- [ ] Quiet hours enforcement
+- [ ] Timezone detection
+- [ ] Claude API swap (stub ready in `ai.service.js`)
+- [ ] Mini App frontend (React + Vite, Telegram Mini App SDK)

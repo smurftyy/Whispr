@@ -113,6 +113,25 @@ class SchedulerService {
     return scheduledReminders.length;
   }
 
+  /**
+   * Remove queued jobs for a reminder where removal is supported by Bull.
+   * @param {string|import('mongoose').Types.ObjectId} reminderId
+   * @returns {Promise<number>}
+   */
+  async cancelReminderJobs(reminderId) {
+    const reminderIdStr = reminderId.toString();
+    let removed = 0;
+    const jobs = await reminderQueue.getJobs(['waiting', 'delayed', 'paused']);
+
+    for (const job of jobs) {
+      if (job.data?.reminderId !== reminderIdStr) continue;
+      await job.remove();
+      removed += 1;
+    }
+
+    return removed;
+  }
+
   // -------------------------------------------------------------------------
   // Internal — Worker
   // -------------------------------------------------------------------------

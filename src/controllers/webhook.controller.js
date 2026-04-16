@@ -1,9 +1,7 @@
 // src/controllers/webhook.controller.js — Message Handler (Platform-Agnostic)
 const User = require('../models/User');
-const Reminder = require('../models/Reminder');
-const whisprService = require('../services/whispr.service');
 const notifierService = require('../services/notifier.service');
-const schedulerService = require('../services/scheduler.service');
+const reminderService = require('../services/reminder.service');
 const logger = require('../utils/logger');
 const {
   CONVERSATION_STATES,
@@ -15,15 +13,8 @@ const {
 } = require('../constants');
 
 // ---------------------------------------------------------------------------
-// Strategy → minutes mapping (deterministic, matches Gemini output)
+// Strategy labels for confirmation copy.
 // ---------------------------------------------------------------------------
-const STRATEGY_TIMING_MAP = {
-  [NOTIFICATION_STRATEGIES.IMMEDIATE]:        [0],
-  [NOTIFICATION_STRATEGIES.THIRTY_MIN_BEFORE]: [30],
-  [NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE]:   [60],
-  [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]:    [1440],
-};
-
 const STRATEGY_LABELS = {
   [NOTIFICATION_STRATEGIES.IMMEDIATE]:        'immediately',
   [NOTIFICATION_STRATEGIES.THIRTY_MIN_BEFORE]: '30 mins before',
@@ -78,7 +69,7 @@ class WebhookController {
       // --- State machine ---
       switch (user.conversationState) {
         case CONVERSATION_STATES.IDLE:
-          return this._handleIdle(user, messageText, platformId, platform, messageId);
+          return this._handleIdle(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_PERSONA:
           return this._handleSelectPersona(user, messageText, platformId, platform);
         case CONVERSATION_STATES.SELECT_CONTEXT:
@@ -87,7 +78,7 @@ class WebhookController {
           logger.error(`Unknown state ${user.conversationState} for user ${user._id}`);
           user.conversationState = CONVERSATION_STATES.IDLE;
           await user.save();
-          return this._handleIdle(user, messageText, platformId, platform, messageId);
+          return this._handleIdle(user, messageText, platformId, platform);
       }
     } catch (error) {
       logger.error('Process message error:', error.message);
@@ -105,9 +96,8 @@ class WebhookController {
 
   /**
    * Primary flow: extract → schedule → confirm in a single turn.
-   * @param {string} [messageId] - Platform message ID for idempotency (deduplication).
    */
-  async _handleIdle(user, messageText, platformId, platform, messageId) {
+  async _handleIdle(user, messageText, platformId, platform) {
     if (messageText.length > 500) {
       await notifierService.send(platformId, MESSAGES.INPUT_TOO_LONG, platform);
       return;
@@ -115,66 +105,24 @@ class WebhookController {
 
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
-    let extracted;
+    let extracted, reminder;
     try {
-      extracted = await whisprService.extractReminder(messageText);
+      ({ reminder, extracted } = await reminderService.createFromText(
+        user._id,
+        platformId,
+        platform,
+        messageText,
+      ));
     } catch (error) {
-      logger.error('Gemini extraction failed:', error.message);
-      return notifierService.send(platformId, MESSAGES.ERROR_AI_UNAVAILABLE, platform);
-    }
-
-    if (!extracted.eventTime) {
-      return notifierService.send(platformId, MESSAGES.NO_DEADLINE, platform);
-    }
-
-    // Idempotency: avoid duplicate reminders when the same message is delivered twice
-    if (messageId) {
-      let existing;
-      try {
-        existing = await Reminder.findOne({
-          userId: user._id,
-          platformMessageId: messageId,
-          status: { $in: ['active', 'pending', 'sent'] },
-        });
-      } catch (idempotencyErr) {
-        logger.error('Idempotency check error:', idempotencyErr.message);
+      if (error.code === 'NO_DEADLINE') {
+        return notifierService.send(platformId, MESSAGES.NO_DEADLINE, platform);
       }
-      if (existing) {
-        await notifierService.send(platformId, 'This reminder was already set. :)', platform);
-        return;
+      if (error.code === 'AI_EXTRACTION_FAILED') {
+        return notifierService.send(platformId, MESSAGES.ERROR_AI_UNAVAILABLE, platform);
       }
-    }
 
-    const strategy = extracted.suggestedNotificationStrategy;
-    const notificationTiming = STRATEGY_TIMING_MAP[strategy] || STRATEGY_TIMING_MAP[NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE];
-
-    let reminder;
-    try {
-      reminder = await Reminder.create({
-        userId: user._id,
-        originalMessage: messageText,
-        platformMessageId: messageId || undefined,
-        extracted: {
-          task: extracted.task,
-          deadline: extracted.eventTime,
-          urgency: extracted.urgency,
-          type: extracted.type || 'other',
-        },
-        status: 'active',
-        frequency: extracted.recurrence || 'none',
-        notificationTiming,
-      });
-    } catch (createErr) {
-      logger.error('Reminder.create failed:', createErr.message);
+      logger.error('Reminder creation failed:', error.message);
       return notifierService.send(platformId, MESSAGES.ERROR_GENERIC, platform);
-    }
-
-    let schedulingFailed = false;
-    try {
-      await schedulerService.scheduleReminder(reminder, user);
-    } catch (schedErr) {
-      schedulingFailed = true;
-      logger.error(`Scheduling failed for reminder ${reminder._id}:`, schedErr.message);
     }
 
     // Confirmation summary — always sent regardless of scheduling outcome
@@ -197,11 +145,12 @@ class WebhookController {
     // less than 30 minutes away, describe the alert as happening at the due time.
     const now = new Date();
     const diffMins = (deadline.getTime() - now.getTime()) / 60000;
+    const strategy = extracted.suggestedNotificationStrategy;
     const alertLabel = diffMins < 30
       ? 'at the due time'
       : (STRATEGY_LABELS[strategy] || '1 hour before');
 
-    const summary = schedulingFailed
+    const summary = reminder.schedulingFailed
       ? `Reminder set! :)\n\n` +
         `Task: ${extracted.task}\n` +
         `Due: ${timeStr}\n\n` +
@@ -324,7 +273,7 @@ class WebhookController {
   }
 
   async _handleList(user, platformId, platform) {
-    const reminders = await Reminder.findActive(user._id);
+    const reminders = await reminderService.listForUser(user._id);
     if (reminders.length === 0) {
       return notifierService.send(platformId, MESSAGES.NO_ACTIVE_REMINDERS, platform);
     }
@@ -342,32 +291,18 @@ class WebhookController {
   }
 
   async _handleCancel(user, platformId, platform) {
-    if (user.conversationState !== CONVERSATION_STATES.IDLE && user.draftReminderId) {
-      await Reminder.findByIdAndUpdate(user.draftReminderId, { status: 'cancelled' });
-    }
-    user.conversationState = CONVERSATION_STATES.IDLE;
-    user.draftReminderId = null;
-    await user.save();
-
+    await reminderService.cancelDraft(user._id);
     return notifierService.send(platformId, MESSAGES.CANCELLED, platform);
   }
 
   async _handleDelete(user, id, platformId, platform) {
     try {
-      const reminders = await Reminder.find({
-        userId: user._id,
-        status: { $in: ['pending', 'active', 'sent'] },
-      });
-      const reminder = reminders.find((r) => r._id.toString().endsWith(id));
-
-      if (!reminder) {
-        return notifierService.send(platformId, MESSAGES.REMINDER_NOT_FOUND, platform);
-      }
-
-      reminder.status = 'cancelled';
-      await reminder.save();
+      await reminderService.deleteById(user._id, id);
       return notifierService.send(platformId, MESSAGES.REMINDER_DELETED, platform);
     } catch (error) {
+      if (error.code === 'NOT_FOUND') {
+        return notifierService.send(platformId, MESSAGES.REMINDER_NOT_FOUND, platform);
+      }
       logger.error('Delete error:', error.message);
       return notifierService.send(platformId, MESSAGES.ERROR_DELETING, platform);
     }
@@ -376,14 +311,6 @@ class WebhookController {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
-
-  async _cancelDraft(user, reminder) {
-    reminder.status = 'cancelled';
-    await reminder.save();
-    user.conversationState = CONVERSATION_STATES.IDLE;
-    user.draftReminderId = null;
-    await user.save();
-  }
 
   async _resetState(user, platformId, platform) {
     user.conversationState = CONVERSATION_STATES.IDLE;

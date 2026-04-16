@@ -4,6 +4,23 @@ const chrono = require('chrono-node');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 
+// ─── CLAUDE SWAP ────────────────────────────────────────────────────────────
+// When API credits are available, uncomment this block and delete the Gemini
+// block below. No other changes needed — the interface is identical.
+//
+// import Anthropic from '@anthropic-ai/sdk';
+// const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+//
+// async function callAI(prompt) {
+//   const response = await anthropic.messages.create({
+//     model: 'claude-opus-4-6',
+//     max_tokens: 1024,
+//     messages: [{ role: 'user', content: prompt }],
+//   });
+//   return response.content[0].text;
+// }
+// ────────────────────────────────────────────────────────────────────────────
+
 /** @type {import('@google/generative-ai').GenerativeModel} */
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: env.GEMINI_MODEL });
