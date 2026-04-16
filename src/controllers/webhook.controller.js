@@ -1,5 +1,6 @@
 // src/controllers/webhook.controller.js — Message Handler (Platform-Agnostic)
 const User = require('../models/User');
+const env = require('../config/env');
 const notifierService = require('../services/notifier.service');
 const reminderService = require('../services/reminder.service');
 const logger = require('../utils/logger');
@@ -47,7 +48,10 @@ class WebhookController {
         logger.info(`New user created: ${platform}:${platformId}`);
         user.conversationState = CONVERSATION_STATES.SELECT_PERSONA;
         await user.save();
-        await notifierService.send(platformId, MESSAGES.WELCOME, platform);
+        await notifierService.send(platformId, MESSAGES.WELCOME, platform, {
+          webAppUrl: env.MINI_APP_URL,
+          buttonText: 'Open Mini App',
+        });
         await notifierService.send(platformId, MESSAGES.selectPersona(), platform);
       }
 
@@ -55,6 +59,7 @@ class WebhookController {
 
       // --- Global commands (available in any state) ---
       const command = messageText.trim().toLowerCase();
+      if (command === COMMANDS.START) return this._handleStart(user, platformId, platform);
       if (command === COMMANDS.HELP)   return this._handleHelp(platformId, platform);
       if (command === COMMANDS.LIST)   return this._handleList(user, platformId, platform);
       if (command === COMMANDS.PROFILE) return this._handleProfile(user, platformId, platform);
@@ -164,7 +169,10 @@ class WebhookController {
         `Type /list to view all reminders or /delete [id] to remove one.`;
 
     try {
-      await notifierService.send(platformId, summary, platform);
+      await notifierService.send(platformId, summary, platform, {
+        webAppUrl: env.MINI_APP_URL,
+        buttonText: 'Open Mini App',
+      });
     } catch (sendErr) {
       logger.error('Failed to send confirmation:', sendErr.message);
     }
@@ -264,6 +272,17 @@ class WebhookController {
 
   async _handleHelp(platformId, platform) {
     return notifierService.send(platformId, MESSAGES.helpText(), platform);
+  }
+
+  async _handleStart(user, platformId, platform) {
+    const message = user.persona
+      ? 'Welcome back. Open the Mini App to view and manage your reminders.'
+      : 'Welcome to Whispr. Open the Mini App to manage reminders, or reply here to keep chatting.';
+
+    return notifierService.send(platformId, message, platform, {
+      webAppUrl: env.MINI_APP_URL,
+      buttonText: 'Open Mini App',
+    });
   }
 
   async _handleProfile(user, platformId, platform) {

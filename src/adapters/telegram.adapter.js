@@ -20,6 +20,7 @@ class TelegramAdapter extends MessagingProvider {
     /** @type {TelegramBot | null} */
     this.bot = null;
     this.token = token;
+    this.miniAppUrl = null;
   }
 
   /**
@@ -61,6 +62,28 @@ class TelegramAdapter extends MessagingProvider {
   }
 
   /**
+   * Configure Telegram's persistent menu button for the Mini App.
+   * @param {string} miniAppUrl
+   */
+  async configureMiniApp(miniAppUrl) {
+    this.miniAppUrl = miniAppUrl || null;
+    if (!this.bot || !this.miniAppUrl) return;
+
+    try {
+      await this.bot.setChatMenuButton({
+        menu_button: {
+          type: 'web_app',
+          text: 'Open Whispr',
+          web_app: { url: this.miniAppUrl },
+        },
+      });
+      logger.info('Telegram Mini App menu button configured');
+    } catch (error) {
+      logger.error('Failed to configure Telegram Mini App menu button:', error.message);
+    }
+  }
+
+  /**
    * Process a raw Telegram update object received via webhook.
    * Triggers the same 'message' event as polling, so onMessage() works in both modes.
    *
@@ -80,13 +103,25 @@ class TelegramAdapter extends MessagingProvider {
    * @param {string} message - Plain-text message body
    * @returns {Promise<{success: boolean, error?: string}>}
    */
-  async send(to, message) {
+  async send(to, message, options = {}) {
     if (!this.bot) {
       throw new Error('Bot not initialized');
     }
 
     try {
-      await this.bot.sendMessage(to, message);
+      const form = {};
+      if (options.webAppUrl) {
+        form.reply_markup = {
+          inline_keyboard: [[{
+            text: options.buttonText || 'Open Whispr',
+            web_app: { url: options.webAppUrl },
+          }]],
+        };
+      } else if (options.replyMarkup) {
+        form.reply_markup = options.replyMarkup;
+      }
+
+      await this.bot.sendMessage(to, message, form);
       return { success: true };
     } catch (error) {
       logger.error(`TelegramAdapter: Failed to send to ${to}:`, error.message);

@@ -31,6 +31,7 @@ const env = {
 
   /** Telegram */
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+  MINI_APP_URL: process.env.MINI_APP_URL,
 
   /** Timezone (optional override, default relies on system) */
   TZ: process.env.TZ || undefined,

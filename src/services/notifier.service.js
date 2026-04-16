@@ -32,7 +32,7 @@ class NotifierService {
    * @param {string} platform - Registered platform name
    * @returns {Promise<{success: boolean, error?: string}>}
    */
-  async send(to, message, platform) {
+  async send(to, message, platform, options = {}) {
     const adapter = this.adapters.get(platform);
     if (!adapter) {
       const msg = `No adapter registered for platform "${platform}"`;
@@ -42,7 +42,7 @@ class NotifierService {
 
     try {
       logger.info(`Sending ${platform} message to ${to}`);
-      return await adapter.send(to, message);
+      return await adapter.send(to, message, options);
     } catch (error) {
       logger.error(`Notifier: failed to send ${platform} message to ${to}:`, error.message);
       throw error;
@@ -121,6 +121,11 @@ class NotifierService {
     if (user.persona === 'student') return 'You\'ve got this. :)';
     if (user.persona === 'business') return 'Quick nudge before your work item. :)';
     return '';
+  }
+
+  async shutdown() {
+    logger.info('NotifierService shut down cleanly');
+    // extend this if adapters ever hold open connections
   }
 }
 

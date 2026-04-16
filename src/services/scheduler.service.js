@@ -132,6 +132,16 @@ class SchedulerService {
     return removed;
   }
 
+  async shutdown() {
+    if (this._periodicCheckTimer) {
+      clearInterval(this._periodicCheckTimer);
+      this._periodicCheckTimer = null;
+    }
+
+    await reminderQueue.close();
+    logger.info('Scheduler queue shut down cleanly');
+  }
+
   // -------------------------------------------------------------------------
   // Internal — Worker
   // -------------------------------------------------------------------------
@@ -186,7 +196,7 @@ class SchedulerService {
 
   /** Start an hourly sweep for "pending" reminders that have no scheduled jobs. */
   _startPeriodicCheck() {
-    setInterval(() => {
+    this._periodicCheckTimer = setInterval(() => {
       this._checkAndScheduleReminders().catch(err => logger.error('Periodic check failed:', err));
     }, PERIODIC_CHECK_INTERVAL_MS);
 

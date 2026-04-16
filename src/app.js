@@ -1,6 +1,9 @@
 // src/app.js - Express Application
 const express = require('express');
+const env = require('./config/env');
 const logger = require('./utils/logger');
+const miniAppCors = require('./middleware/cors');
+const apiRoutes = require('./routes/api.routes');
 
 const app = express();
 
@@ -13,6 +16,8 @@ app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`);
   next();
 });
+
+app.use(miniAppCors);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -28,12 +33,14 @@ app.get('/', (req, res) => {
   res.send('Whispr Backend with Telegram Transport');
 });
 
+app.use('/api', apiRoutes);
+
 // Error handler
 app.use((err, req, res, next) => {
   logger.error('Error:', err);
   res.status(500).json({
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 
