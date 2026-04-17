@@ -1,9 +1,11 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CalendarDays, Clock3, Pencil, Trash2 } from 'lucide-react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
 import { useDeleteReminder, useReminders } from '../hooks/useReminders'
 import {
   formatReminderDate,
+  formatReminderRelativeTime,
   formatReminderTime,
   getReminderDate,
   getReminderStatus,
@@ -14,6 +16,7 @@ import { getTelegramWebApp } from '../utils/telegram'
 function ReminderDetail({ reminderId, onNavigateDashboard }) {
   const { data, isLoading } = useReminders()
   const reminders = useMemo(() => data?.reminders || [], [data])
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const { mutate: deleteReminder, isPending: isDeleting } = useDeleteReminder()
 
@@ -30,6 +33,8 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
     reminder?.originalMessage ||
     reminder?.extracted?.notes ||
     ''
+  const scheduledReminders = reminder?.scheduledReminders || []
+  const notificationTiming = reminder?.notificationTiming || []
 
   useEffect(() => {
     const webApp = getTelegramWebApp()
@@ -55,7 +60,11 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
 
     deleteReminder(reminder.id, {
       onSuccess: () => {
+        setShowDeleteConfirm(false)
         onNavigateDashboard()
+      },
+      onError: () => {
+        setShowDeleteConfirm(false)
       },
     })
   }
@@ -87,10 +96,10 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
       </header>
 
       <main className="mx-auto min-h-screen w-full max-w-4xl px-4 pb-44 pt-24 sm:px-6 sm:pt-28">
-        {isLoading && <div className="whispr-card h-56 animate-pulse rounded-2xl bg-[#191919]" />}
+        {isLoading && <div className="whispr-card h-56 animate-pulse rounded-2xl bg-[var(--whispr-surface)]" />}
 
         {!isLoading && !reminder && (
-          <div className="whispr-card rounded-2xl bg-[#191919] p-6 text-white/70">
+          <div className="whispr-card rounded-2xl bg-[var(--whispr-surface)] p-6 text-white/70">
             Reminder not found.
           </div>
         )}
@@ -101,7 +110,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
               {getReminderTitle(reminder)}
             </h1>
 
-            <section className="mt-8 rounded-2xl bg-[#191919] p-5 sm:p-6">
+            <section className="mt-8 rounded-2xl bg-[var(--whispr-surface)] p-5 sm:p-6">
               <div className="grid grid-cols-2 divide-x divide-white/10">
                 <div className="pr-4">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
@@ -135,6 +144,56 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
                   </div>
                 </>
               )}
+
+              {(scheduledReminders.length > 0 || notificationTiming.length > 0) && (
+                <>
+                  <div className="my-5 h-px bg-white/10" />
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+                      SCHEDULED NOTIFICATIONS
+                    </p>
+
+                    <div className="mt-3 space-y-2">
+                      {scheduledReminders.length > 0
+                        ? scheduledReminders.map((notification, index) => (
+                            <div
+                              key={`${notification.scheduledFor}-${index}`}
+                              className="flex items-center justify-between rounded-xl bg-black/20 px-3 py-2"
+                            >
+                              <div>
+                                <p className="text-sm text-white/85">
+                                  {formatReminderDate(notification.scheduledFor)} at {formatReminderTime(notification.scheduledFor)}
+                                </p>
+                                <p className="text-[11px] text-white/55">
+                                  {formatReminderRelativeTime(notification.scheduledFor)}
+                                </p>
+                              </div>
+                              <span
+                                className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                                  notification.sent ? 'text-[#7ce08d]' : 'text-white/55'
+                                }`}
+                              >
+                                {notification.sent ? 'Sent' : 'Pending'}
+                              </span>
+                            </div>
+                          ))
+                        : notificationTiming.map((timing) => (
+                            <div
+                              key={timing}
+                              className="flex items-center justify-between rounded-xl bg-black/20 px-3 py-2"
+                            >
+                              <p className="text-sm text-white/85">
+                                {timing} minutes before due time
+                              </p>
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/55">
+                                Planned
+                              </span>
+                            </div>
+                          ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </section>
           </>
         )}
@@ -151,7 +210,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
 
           <button
             type="button"
-            onClick={handleDelete}
+            onClick={() => setShowDeleteConfirm(true)}
             disabled={!reminder || isDeleting}
             className="whispr-pill flex items-center justify-center gap-2 rounded-full bg-[#2a1414] px-6 py-4 text-base font-medium text-[#ff9b96] disabled:cursor-not-allowed disabled:opacity-45"
           >
@@ -160,6 +219,17 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
           </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Reminder"
+        message={`Delete "${getReminderTitle(reminder)}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        isLoading={isDeleting}
+        confirmClassName="bg-[#ff9b96] text-[#2a1414]"
+      />
     </div>
   )
 }

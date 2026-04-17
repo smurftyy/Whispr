@@ -19,6 +19,8 @@ const STATUS_THEME = {
   },
 }
 
+const relativeTimeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+
 function parseDate(input) {
   if (!input) return null
 
@@ -107,4 +109,46 @@ export function formatReminderTime(input) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function capitalize(value) {
+  if (!value) return value
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+export function formatReminderRelativeTime(input) {
+  const date = input instanceof Date ? input : parseDate(input)
+  if (!date) return ''
+
+  const diff = date.getTime() - Date.now()
+  const absDiff = Math.abs(diff)
+
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  const week = 7 * day
+
+  let unit = 'minute'
+  let divisor = minute
+
+  if (absDiff >= week) {
+    unit = 'week'
+    divisor = week
+  } else if (absDiff >= day) {
+    unit = 'day'
+    divisor = day
+  } else if (absDiff >= hour) {
+    unit = 'hour'
+    divisor = hour
+  }
+
+  const value = Math.round(diff / divisor)
+  return capitalize(relativeTimeFormat.format(value, unit))
+}
+
+export function getReminderRelativeTime(reminder) {
+  const dueDate = getReminderDate(reminder)
+  if (!dueDate) return ''
+
+  return formatReminderRelativeTime(dueDate)
 }

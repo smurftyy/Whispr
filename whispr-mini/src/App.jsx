@@ -1,11 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Dashboard from './screens/Dashboard'
 import CreateReminder from './screens/CreateReminder'
 import ReminderDetail from './screens/ReminderDetail'
+import { applyTelegramTheme } from './utils/telegram'
 
 function App() {
   const [screen, setScreen] = useState('dashboard')
   const [selectedReminderId, setSelectedReminderId] = useState(null)
+
+  useEffect(() => {
+    applyTelegramTheme()
+  }, [])
 
   const goToDashboard = () => {
     setScreen('dashboard')

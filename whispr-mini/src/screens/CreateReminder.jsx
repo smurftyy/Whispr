@@ -100,7 +100,7 @@ function CreateReminder({ onNavigateDashboard }) {
             value={text}
             onChange={(event) => setText(event.target.value)}
             placeholder="e.g., Remind me to buy coffee tomorrow at 10am..."
-            className="whispr-card min-h-[140px] w-full resize-none rounded-2xl bg-[#181818] p-6 pr-20 text-lg text-white placeholder:text-white/30 focus:outline-none"
+            className="whispr-card min-h-[140px] w-full resize-none rounded-2xl bg-[var(--whispr-surface)] p-6 pr-20 text-lg text-white placeholder:text-white/30 focus:outline-none"
           />
 
           <button
@@ -122,7 +122,7 @@ function CreateReminder({ onNavigateDashboard }) {
             </div>
 
             {isExtracting && (
-              <div className="whispr-card animate-pulse rounded-2xl bg-[#191919] p-6">
+              <div className="whispr-card animate-pulse rounded-2xl bg-[var(--whispr-surface)] p-6">
                 <div className="h-9 w-44 rounded-md bg-white/10" />
                 <div className="mt-5 flex gap-3">
                   <div className="h-9 w-32 rounded-xl bg-white/10" />
@@ -132,7 +132,7 @@ function CreateReminder({ onNavigateDashboard }) {
             )}
 
             {!isExtracting && extracted && (
-              <div className="whispr-card relative overflow-hidden rounded-2xl bg-[#181818] p-6">
+              <div className="whispr-card relative overflow-hidden rounded-2xl bg-[var(--whispr-surface)] p-6">
                 <div className="hidden" />
                 <div className="relative z-10">
                   <p className="font-display text-5xl leading-none text-white sm:text-6xl">
@@ -168,7 +168,7 @@ function CreateReminder({ onNavigateDashboard }) {
             type="button"
             onClick={handleConfirm}
             disabled={!canConfirm}
-            className="whispr-pill flex w-full items-center justify-center gap-2 rounded-full bg-[#1c1c1c] px-6 py-4 text-lg font-semibold text-white transition duration-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            className="whispr-pill flex w-full items-center justify-center gap-2 rounded-full bg-[var(--whispr-surface)] px-6 py-4 text-lg font-semibold text-white transition duration-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {isCreating ? 'Creating...' : 'Confirm Reminder'}
             <CheckCircle2 size={20} />

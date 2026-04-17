@@ -1,10 +1,12 @@
-import { createElement, useEffect, useMemo } from 'react'
-import { CheckCircle2, Clock3, Layers, Plus } from 'lucide-react'
+import { createElement, useEffect, useMemo, useState } from 'react'
+import { CheckCircle2, Clock3, Layers, Plus, Trash2 } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import BottomNav from '../components/BottomNav'
+import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
-import { useReminders } from '../hooks/useReminders'
+import { useDeleteReminder, useReminders } from '../hooks/useReminders'
 import {
+  getReminderRelativeTime,
   getReminderStatus,
   getReminderSubtitle,
   getReminderTitle,
@@ -14,7 +16,7 @@ import { getTelegramFirstName, getTelegramWebApp, initTelegramViewport } from '.
 
 function StatCard({ icon, value, label, iconClassName = '' }) {
   return (
-    <div className="aspect-square rounded-2xl bg-[#1a1a1a] p-4 sm:p-5">
+    <div className="aspect-square rounded-2xl bg-[var(--whispr-surface)] p-4 sm:p-5">
       {createElement(icon, { size: 18, className: iconClassName })}
       <p className="mt-8 font-display text-4xl leading-none text-white sm:text-5xl">{value}</p>
       <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/55">{label}</p>
@@ -24,8 +26,10 @@ function StatCard({ icon, value, label, iconClassName = '' }) {
 
 function Dashboard({ onOpenCreate, onOpenDetail }) {
   const { data, isLoading } = useReminders()
+  const { mutate: deleteReminder, isPending: isDeleting } = useDeleteReminder()
   const reminders = useMemo(() => data?.reminders || [], [data])
   const firstName = getTelegramFirstName()
+  const [reminderPendingDelete, setReminderPendingDelete] = useState(null)
 
   useEffect(() => {
     initTelegramViewport()
@@ -48,6 +52,29 @@ function Dashboard({ onOpenCreate, onOpenDetail }) {
       done,
     }
   }, [reminders])
+
+  const handleOpenDeleteConfirm = (event, reminder) => {
+    event.stopPropagation()
+    setReminderPendingDelete(reminder)
+  }
+
+  const handleCancelDelete = () => {
+    if (isDeleting) return
+    setReminderPendingDelete(null)
+  }
+
+  const handleConfirmDelete = () => {
+    if (!reminderPendingDelete?.id || isDeleting) return
+
+    deleteReminder(reminderPendingDelete.id, {
+      onSuccess: () => {
+        setReminderPendingDelete(null)
+      },
+      onError: () => {
+        setReminderPendingDelete(null)
+      },
+    })
+  }
 
   return (
     <div className="whispr-shell">
@@ -77,12 +104,12 @@ function Dashboard({ onOpenCreate, onOpenDetail }) {
               [1, 2, 3].map((placeholder) => (
                 <div
                   key={placeholder}
-                  className="whispr-card h-28 animate-pulse rounded-2xl bg-[#191919]"
+                  className="whispr-card h-28 animate-pulse rounded-2xl bg-[var(--whispr-surface)]"
                 />
               ))}
 
             {!isLoading && reminders.length === 0 && (
-              <div className="whispr-card rounded-2xl bg-[#191919] p-5 text-sm text-white/65">
+              <div className="whispr-card rounded-2xl bg-[var(--whispr-surface)] p-5 text-sm text-white/65">
                 No reminders yet. Tap + to create your first one.
               </div>
             )}
@@ -91,28 +118,62 @@ function Dashboard({ onOpenCreate, onOpenDetail }) {
               reminders.map((reminder) => {
                 const status = getReminderStatus(reminder)
                 const statusTheme = getStatusTheme(status)
+                const relativeTime = getReminderRelativeTime(reminder)
 
                 return (
-                  <button
+                  <article
                     key={reminder.id}
-                    type="button"
-                    onClick={() => onOpenDetail(reminder.id)}
-                    className="w-full rounded-2xl border-0 p-5 text-left transition duration-200 hover:-translate-y-0.5"
+                    className="relative w-full rounded-2xl border-0 p-5 text-left transition duration-200 hover:-translate-y-0.5"
                     style={{ backgroundColor: statusTheme.cardBg }}
                   >
-                    <p className="font-display text-[2rem] leading-tight text-white">
-                      {getReminderTitle(reminder)}
-                    </p>
-                    <p className="mt-2 truncate text-sm text-white/65">
-                      {getReminderSubtitle(reminder)}
-                    </p>
-                    <StatusBadge status={status} className="mt-4" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetail(reminder.id)}
+                      className="absolute inset-0 z-0 rounded-2xl"
+                      aria-label={`Open reminder ${getReminderTitle(reminder)}`}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={(event) => handleOpenDeleteConfirm(event, reminder)}
+                      className="absolute right-4 top-4 z-20 rounded-full bg-black/25 p-2 text-white/80 transition hover:bg-black/40 hover:text-white"
+                      aria-label={`Delete reminder ${getReminderTitle(reminder)}`}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+
+                    <div className="relative z-10 pr-12">
+                      <p className="font-display text-[2rem] leading-tight text-white">
+                        {getReminderTitle(reminder)}
+                      </p>
+                      <p className="mt-2 truncate text-sm text-white/65">
+                        {getReminderSubtitle(reminder)}
+                      </p>
+                    </div>
+
+                    <div className="relative z-10 mt-4 flex items-center justify-between gap-3">
+                      <StatusBadge status={status} />
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                        {relativeTime}
+                      </span>
+                    </div>
+                  </article>
                 )
               })}
           </div>
         </section>
       </main>
+
+      <ConfirmDialog
+        open={Boolean(reminderPendingDelete)}
+        title="Delete Reminder"
+        message={`Delete "${getReminderTitle(reminderPendingDelete)}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        isLoading={isDeleting}
+        confirmClassName="bg-[#ff9b96] text-[#2a1414]"
+      />
 
       <button
         type="button"

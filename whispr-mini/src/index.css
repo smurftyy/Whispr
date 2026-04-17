@@ -4,6 +4,22 @@
 
 :root {
   color-scheme: dark;
+
+  --tg-theme-bg-color: #0d0d0d;
+  --tg-theme-text-color: #f1f1f1;
+  --tg-theme-hint-color: rgba(241, 241, 241, 0.58);
+  --tg-theme-secondary-bg-color: #191919;
+  --tg-theme-header-bg-color: rgba(13, 13, 13, 0.9);
+  --tg-theme-button-color: #f1f1f1;
+  --tg-theme-button-text-color: #0d0d0d;
+  --tg-theme-section-separator-color: rgba(255, 255, 255, 0.06);
+
+  --whispr-bg: var(--tg-theme-bg-color);
+  --whispr-text: var(--tg-theme-text-color);
+  --whispr-muted: var(--tg-theme-hint-color);
+  --whispr-surface: var(--tg-theme-secondary-bg-color);
+  --whispr-topbar-bg: var(--tg-theme-header-bg-color);
+  --whispr-topbar-border: var(--tg-theme-section-separator-color);
 }
 
 * {
@@ -19,8 +35,8 @@ body,
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #0d0d0d;
-  color: #f1f1f1;
+  background-color: var(--whispr-bg);
+  color: var(--whispr-text);
   font-family: 'Inter', sans-serif;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -48,12 +64,12 @@ textarea {
     background:
       radial-gradient(circle at 50% -10%, rgba(255, 255, 255, 0.08) 0%, rgba(13, 13, 13, 0) 55%),
       radial-gradient(circle at 85% 12%, rgba(36, 56, 120, 0.12) 0%, rgba(13, 13, 13, 0) 40%),
-      #0d0d0d;
+      var(--whispr-bg);
   }
 
   .whispr-topbar {
-    background-color: rgba(13, 13, 13, 0.9);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background-color: var(--whispr-topbar-bg);
+    border-bottom: 1px solid var(--whispr-topbar-border);
   }
 
   .whispr-card {
@@ -67,7 +83,7 @@ textarea {
   }
 
   .whispr-muted {
-    color: rgba(255, 255, 255, 0.58);
+    color: var(--whispr-muted);
   }
 }
 
