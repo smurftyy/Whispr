@@ -106,7 +106,7 @@ class ReminderService {
     try {
       return await Reminder.find({
         userId,
-        status: { $in: [REMINDER_STATUS.ACTIVE, REMINDER_STATUS.PENDING] },
+        status: { $in: [REMINDER_STATUS.ACTIVE, REMINDER_STATUS.PENDING, REMINDER_STATUS.COMPLETED] },
       }).sort({ 'extracted.deadline': 1 });
     } catch (error) {
       logger.error(`Failed to list reminders for user ${userId}:`, error.message);
@@ -188,6 +188,8 @@ class ReminderService {
       scheduledReminders: reminder.scheduledReminders,
       createdAt: reminder.createdAt,
       updatedAt: reminder.updatedAt,
+      originalMessage: reminder.originalMessage ?? null,
+      notes: reminder.notes ?? null,
     };
   }
 

@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+
+  --tg-theme-bg-color: #0d0d0d;
+  --tg-theme-text-color: #f1f1f1;
+  --tg-theme-hint-color: rgba(241, 241, 241, 0.58);
+  --tg-theme-secondary-bg-color: #191919;
+  --tg-theme-header-bg-color: rgba(13, 13, 13, 0.9);
+  --tg-theme-button-color: #f1f1f1;
+  --tg-theme-button-text-color: #0d0d0d;
+  --tg-theme-section-separator-color: rgba(255, 255, 255, 0.06);
+
+  --whispr-bg: var(--tg-theme-bg-color);
+  --whispr-text: var(--tg-theme-text-color);
+  --whispr-muted: var(--tg-theme-hint-color);
+  --whispr-surface: var(--tg-theme-secondary-bg-color);
+  --whispr-topbar-bg: var(--tg-theme-header-bg-color);
+  --whispr-topbar-border: var(--tg-theme-section-separator-color);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--whispr-bg);
+  color: var(--whispr-text);
+  font-family: 'Inter', sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  font-family: 'Playfair Display', serif;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+@layer components {
+  .whispr-shell {
+    min-height: 100vh;
+    background:
+      radial-gradient(circle at 50% -10%, rgba(255, 255, 255, 0.08) 0%, rgba(13, 13, 13, 0) 55%),
+      radial-gradient(circle at 85% 12%, rgba(36, 56, 120, 0.12) 0%, rgba(13, 13, 13, 0) 40%),
+      var(--whispr-bg);
+  }
+
+  .whispr-topbar {
+    background-color: var(--whispr-topbar-bg);
+    border-bottom: 1px solid var(--whispr-topbar-border);
+  }
+
+  .whispr-card {
+    border-radius: 1rem;
+    box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35);
+  }
+
+  .whispr-pill {
+    border-radius: 9999px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .whispr-muted {
+    color: var(--whispr-muted);
+  }
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+}
+
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
