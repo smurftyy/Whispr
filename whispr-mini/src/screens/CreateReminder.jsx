@@ -1,12 +1,26 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, Clock3, Mic, Sparkles } from 'lucide-react'
 import TopBar from '../components/TopBar'
-import { useCreateReminder, useExtractReminder } from '../hooks/useReminders'
+import { useCreateReminder, useExtractReminder, useReminders } from '../hooks/useReminders'
 import { formatReminderDate, formatReminderTime } from '../utils/reminder'
 import { getTelegramWebApp } from '../utils/telegram'
 
-function CreateReminder({ onNavigateDashboard }) {
-  const [text, setText] = useState('')
+function CreateReminder({ onNavigateDashboard, editReminderId }) {
+  const { data } = useReminders()
+  const reminders = useMemo(() => data?.reminders || [], [data])
+  const editReminder = useMemo(
+    () => (editReminderId ? reminders.find((r) => r.id === editReminderId || r.shortId === editReminderId) : null),
+    [reminders, editReminderId],
+  )
+
+  const [text, setText] = useState(() => editReminder?.originalMessage || '')
+  const [isRecording, setIsRecording] = useState(false)
+  const [isVoiceAvailable, setIsVoiceAvailable] = useState(false)
+  const recognitionRef = useRef(null)
+
+  useEffect(() => {
+    setIsVoiceAvailable(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition))
+  }, [])
 
   const {
     mutate: extractReminder,
@@ -67,12 +81,44 @@ function CreateReminder({ onNavigateDashboard }) {
 
   const canConfirm = Boolean(extracted && !isExtracting && !isCreating)
 
+  const toggleRecording = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) return
+
+    if (isRecording) {
+      recognitionRef.current?.stop()
+      return
+    }
+
+    getTelegramWebApp()?.HapticFeedback?.impactOccurred?.('light')
+
+    const recognition = new SR()
+    recognition.continuous = false
+    recognition.interimResults = false
+    recognition.lang = 'en-US'
+
+    recognition.onstart = () => setIsRecording(true)
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript
+      setText(transcript)
+      getTelegramWebApp()?.HapticFeedback?.notificationOccurred?.('success')
+    }
+
+    recognition.onend = () => setIsRecording(false)
+    recognition.onerror = () => setIsRecording(false)
+
+    recognitionRef.current = recognition
+    recognition.start()
+  }
+
   const handleConfirm = () => {
     if (!extracted || isCreating) return
 
     createReminder(
       {
         extracted,
+        text: trimmedText,
       },
       {
         onSuccess: () => {
@@ -103,13 +149,20 @@ function CreateReminder({ onNavigateDashboard }) {
             className="whispr-card min-h-[140px] w-full resize-none rounded-2xl bg-[var(--whispr-surface)] p-6 pr-20 text-lg text-white placeholder:text-white/30 focus:outline-none"
           />
 
-          <button
-            type="button"
-            aria-label="Voice input"
-            className="absolute bottom-4 right-4 flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/12 text-white/90 backdrop-blur"
-          >
-            <Mic size={20} />
-          </button>
+          {isVoiceAvailable && (
+            <button
+              type="button"
+              aria-label={isRecording ? 'Stop recording' : 'Voice input'}
+              onClick={toggleRecording}
+              className={`absolute bottom-4 right-4 flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur transition ${
+                isRecording
+                  ? 'animate-pulse border-red-400/60 bg-red-400/20 text-red-300'
+                  : 'border-white/15 bg-white/12 text-white/90'
+              }`}
+            >
+              <Mic size={20} />
+            </button>
+          )}
         </section>
 
         {trimmedText && (

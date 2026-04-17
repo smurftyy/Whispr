@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CalendarDays, Clock3, Pencil, Trash2 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
-import { useDeleteReminder, useReminders } from '../hooks/useReminders'
+import { useCompleteReminder, useDeleteReminder, useReminders } from '../hooks/useReminders'
 import {
   formatReminderDate,
   formatReminderRelativeTime,
@@ -13,12 +13,13 @@ import {
 } from '../utils/reminder'
 import { getTelegramWebApp } from '../utils/telegram'
 
-function ReminderDetail({ reminderId, onNavigateDashboard }) {
+function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
   const { data, isLoading } = useReminders()
   const reminders = useMemo(() => data?.reminders || [], [data])
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const { mutate: deleteReminder, isPending: isDeleting } = useDeleteReminder()
+  const { mutate: completeReminder, isPending: isCompleting } = useCompleteReminder()
 
   const reminder = useMemo(
     () => reminders.find((entry) => entry.id === reminderId || entry.shortId === reminderId),
@@ -27,12 +28,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
 
   const reminderDate = getReminderDate(reminder)
   const reminderStatus = getReminderStatus(reminder)
-  const notes =
-    reminder?.notes ||
-    reminder?.description ||
-    reminder?.originalMessage ||
-    reminder?.extracted?.notes ||
-    ''
+  const notesContent = reminder?.notes || reminder?.originalMessage || ''
   const scheduledReminders = reminder?.scheduledReminders || []
   const notificationTiming = reminder?.notificationTiming || []
 
@@ -88,6 +84,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
           <button
             type="button"
             aria-label="Edit reminder"
+            onClick={() => onNavigateEdit?.(reminderId)}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white/6 text-white shadow-[0_12px_20px_rgba(0,0,0,0.3)]"
           >
             <Pencil size={18} />
@@ -133,14 +130,14 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
                 </div>
               </div>
 
-              {notes && (
+              {notesContent && (
                 <>
                   <div className="my-5 h-px bg-white/10" />
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
                       NOTES
                     </p>
-                    <p className="mt-3 text-sm leading-relaxed text-white/70">{notes}</p>
+                    <p className="mt-3 text-sm leading-relaxed text-white/70">{notesContent}</p>
                   </div>
                 </>
               )}
@@ -203,9 +200,22 @@ function ReminderDetail({ reminderId, onNavigateDashboard }) {
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">
           <button
             type="button"
-            className="whispr-pill rounded-full bg-white px-6 py-4 text-base font-medium text-black"
+            onClick={() => {
+              if (!reminder?.id || isCompleting) return
+              completeReminder(reminder.id, {
+                onSuccess: () => {
+                  getTelegramWebApp()?.HapticFeedback?.notificationOccurred?.('success')
+                  onNavigateDashboard()
+                },
+                onError: () => {
+                  getTelegramWebApp()?.HapticFeedback?.notificationOccurred?.('error')
+                },
+              })
+            }}
+            disabled={!reminder || isCompleting}
+            className="whispr-pill rounded-full bg-white px-6 py-4 text-base font-medium text-black disabled:cursor-not-allowed disabled:opacity-45"
           >
-            Mark as Completed
+            {isCompleting ? 'Completing…' : 'Mark as Completed'}
           </button>
 
           <button

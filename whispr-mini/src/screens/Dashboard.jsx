@@ -24,7 +24,7 @@ function StatCard({ icon, value, label, iconClassName = '' }) {
   )
 }
 
-function Dashboard({ onOpenCreate, onOpenDetail }) {
+function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
   const { data, isLoading } = useReminders()
   const { mutate: deleteReminder, isPending: isDeleting } = useDeleteReminder()
   const reminders = useMemo(() => data?.reminders || [], [data])
@@ -184,7 +184,7 @@ function Dashboard({ onOpenCreate, onOpenDetail }) {
         <Plus size={24} />
       </button>
 
-      <BottomNav />
+      <BottomNav activeTab={activeTab} onNavigate={onNavigate} />
     </div>
   )
 }

@@ -31,3 +31,11 @@ export function useCreateReminder() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reminders'] }),
   });
 }
+
+export function useCompleteReminder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => api.patch(`/api/reminders/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reminders'] }),
+  });
+}

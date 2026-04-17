@@ -25,6 +25,11 @@ function TopBar() {
           <button
             type="button"
             aria-label="Settings"
+            onClick={() => window.Telegram?.WebApp?.showPopup?.({
+              title: 'Settings',
+              message: 'Settings coming soon.',
+              buttons: [{ type: 'close' }],
+            })}
             className="rounded-full p-2 text-white/80 transition hover:bg-white/10 hover:text-white"
           >
             <Settings size={18} />

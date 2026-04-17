@@ -35,6 +35,10 @@ const env = {
 
   /** Timezone (optional override, default relies on system) */
   TZ: process.env.TZ || undefined,
+
+  /** Claude AI (optional — leave unset to keep Gemini as provider) */
+  CLAUDE_API_KEY: process.env.CLAUDE_API_KEY || null,
+  AI_PROVIDER: process.env.AI_PROVIDER || 'gemini',
 };
 
 // ---------------------------------------------------------------------------

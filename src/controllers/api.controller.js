@@ -1,5 +1,9 @@
+const mongoose = require('mongoose');
 const reminderService = require('../services/reminder.service');
+const schedulerService = require('../services/scheduler.service');
 const aiService = require('../services/ai.service');
+const Reminder = require('../models/Reminder');
+const { REMINDER_STATUS } = require('../constants');
 const logger = require('../utils/logger');
 
 class ApiController {
@@ -57,6 +61,43 @@ class ApiController {
       }
       logger.error('API create reminder error:', error.message);
       return res.status(500).json({ error: 'Failed to create reminder' });
+    }
+  }
+
+  async completeReminder(req, res) {
+    try {
+      let reminder = null;
+
+      if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+        reminder = await Reminder.findOne({ _id: req.params.id, userId: req.user._id });
+      }
+
+      if (!reminder) {
+        const candidates = await Reminder.find({
+          userId: req.user._id,
+          status: { $in: [REMINDER_STATUS.PENDING, REMINDER_STATUS.ACTIVE] },
+        });
+        reminder = candidates.find((r) => r._id.toString().endsWith(req.params.id)) || null;
+      }
+
+      if (!reminder) {
+        return res.status(404).json({ error: 'Reminder not found', code: 'NOT_FOUND' });
+      }
+
+      reminder.status = REMINDER_STATUS.COMPLETED;
+      await reminder.save();
+
+      try {
+        await schedulerService.cancelReminderJobs(reminder._id.toString());
+      } catch (err) {
+        // jobs may not exist if reminder was never scheduled or already fired
+        logger.warn(`cancelReminderJobs skipped for ${reminder._id}: ${err.message}`);
+      }
+
+      return res.json({ reminder: reminderService.serializeReminder(reminder, req.user) });
+    } catch (error) {
+      logger.error('API complete reminder error:', error.message);
+      return res.status(500).json({ error: 'Failed to complete reminder' });
     }
   }
 

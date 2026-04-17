@@ -7,6 +7,7 @@ import { applyTelegramTheme } from './utils/telegram'
 function App() {
   const [screen, setScreen] = useState('dashboard')
   const [selectedReminderId, setSelectedReminderId] = useState(null)
+  const [editReminderId, setEditReminderId] = useState(null)
 
   useEffect(() => {
     applyTelegramTheme()
@@ -17,6 +18,7 @@ function App() {
   }
 
   const goToCreate = () => {
+    setEditReminderId(null)
     setScreen('create')
   }
 
@@ -25,8 +27,18 @@ function App() {
     setScreen('detail')
   }
 
+  const goToEdit = (reminderId) => {
+    setEditReminderId(reminderId)
+    setScreen('create')
+  }
+
   if (screen === 'create') {
-    return <CreateReminder onNavigateDashboard={goToDashboard} />
+    return (
+      <CreateReminder
+        onNavigateDashboard={goToDashboard}
+        editReminderId={editReminderId}
+      />
+    )
   }
 
   if (screen === 'detail') {
@@ -34,6 +46,7 @@ function App() {
       <ReminderDetail
         reminderId={selectedReminderId}
         onNavigateDashboard={goToDashboard}
+        onNavigateEdit={goToEdit}
       />
     )
   }
@@ -42,6 +55,8 @@ function App() {
     <Dashboard
       onOpenCreate={goToCreate}
       onOpenDetail={goToDetail}
+      activeTab={screen}
+      onNavigate={goToDashboard}
     />
   )
 }
