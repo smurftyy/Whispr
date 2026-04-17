@@ -1,0 +1,167 @@
+import { useEffect, useMemo } from 'react'
+import { ArrowLeft, CalendarDays, Clock3, Pencil, Trash2 } from 'lucide-react'
+import StatusBadge from '../components/StatusBadge'
+import { useDeleteReminder, useReminders } from '../hooks/useReminders'
+import {
+  formatReminderDate,
+  formatReminderTime,
+  getReminderDate,
+  getReminderStatus,
+  getReminderTitle,
+} from '../utils/reminder'
+import { getTelegramWebApp } from '../utils/telegram'
+
+function ReminderDetail({ reminderId, onNavigateDashboard }) {
+  const { data, isLoading } = useReminders()
+  const reminders = useMemo(() => data?.reminders || [], [data])
+
+  const { mutate: deleteReminder, isPending: isDeleting } = useDeleteReminder()
+
+  const reminder = useMemo(
+    () => reminders.find((entry) => entry.id === reminderId || entry.shortId === reminderId),
+    [reminders, reminderId],
+  )
+
+  const reminderDate = getReminderDate(reminder)
+  const reminderStatus = getReminderStatus(reminder)
+  const notes =
+    reminder?.notes ||
+    reminder?.description ||
+    reminder?.originalMessage ||
+    reminder?.extracted?.notes ||
+    ''
+
+  useEffect(() => {
+    const webApp = getTelegramWebApp()
+    const backButton = webApp?.BackButton
+
+    if (!backButton) return undefined
+
+    const handleBack = () => {
+      onNavigateDashboard()
+    }
+
+    backButton.show()
+    backButton.onClick(handleBack)
+
+    return () => {
+      backButton.offClick(handleBack)
+      backButton.hide()
+    }
+  }, [onNavigateDashboard])
+
+  const handleDelete = () => {
+    if (!reminder?.id || isDeleting) return
+
+    deleteReminder(reminder.id, {
+      onSuccess: () => {
+        onNavigateDashboard()
+      },
+    })
+  }
+
+  return (
+    <div className="whispr-shell">
+      <header className="fixed inset-x-0 top-0 z-40 px-4 pt-4 sm:px-6 sm:pt-5">
+        <div className="mx-auto flex w-full max-w-4xl items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              aria-label="Back"
+              onClick={onNavigateDashboard}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/6 text-white shadow-[0_12px_20px_rgba(0,0,0,0.3)]"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <StatusBadge status={reminderStatus} />
+          </div>
+
+          <button
+            type="button"
+            aria-label="Edit reminder"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/6 text-white shadow-[0_12px_20px_rgba(0,0,0,0.3)]"
+          >
+            <Pencil size={18} />
+          </button>
+        </div>
+      </header>
+
+      <main className="mx-auto min-h-screen w-full max-w-4xl px-4 pb-44 pt-24 sm:px-6 sm:pt-28">
+        {isLoading && <div className="whispr-card h-56 animate-pulse rounded-2xl bg-[#191919]" />}
+
+        {!isLoading && !reminder && (
+          <div className="whispr-card rounded-2xl bg-[#191919] p-6 text-white/70">
+            Reminder not found.
+          </div>
+        )}
+
+        {!isLoading && reminder && (
+          <>
+            <h1 className="max-w-3xl text-6xl leading-[0.96] text-white sm:text-7xl">
+              {getReminderTitle(reminder)}
+            </h1>
+
+            <section className="mt-8 rounded-2xl bg-[#191919] p-5 sm:p-6">
+              <div className="grid grid-cols-2 divide-x divide-white/10">
+                <div className="pr-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+                    DATE
+                  </p>
+                  <div className="mt-3 flex items-center gap-2 text-white/90">
+                    <CalendarDays size={17} className="text-white/60" />
+                    <span>{formatReminderDate(reminderDate)}</span>
+                  </div>
+                </div>
+
+                <div className="pl-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+                    TIME
+                  </p>
+                  <div className="mt-3 flex items-center gap-2 text-white/90">
+                    <Clock3 size={17} className="text-white/60" />
+                    <span>{formatReminderTime(reminderDate)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {notes && (
+                <>
+                  <div className="my-5 h-px bg-white/10" />
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+                      NOTES
+                    </p>
+                    <p className="mt-3 text-sm leading-relaxed text-white/70">{notes}</p>
+                  </div>
+                </>
+              )}
+            </section>
+          </>
+        )}
+      </main>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/86 to-transparent px-4 pb-safe pt-10 sm:px-6">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">
+          <button
+            type="button"
+            className="whispr-pill rounded-full bg-white px-6 py-4 text-base font-medium text-black"
+          >
+            Mark as Completed
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={!reminder || isDeleting}
+            className="whispr-pill flex items-center justify-center gap-2 rounded-full bg-[#2a1414] px-6 py-4 text-base font-medium text-[#ff9b96] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Trash2 size={18} />
+            {isDeleting ? 'Deleting...' : 'Delete Reminder'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default ReminderDetail
