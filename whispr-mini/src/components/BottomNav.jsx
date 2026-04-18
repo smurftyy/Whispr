@@ -1,4 +1,5 @@
 import { createElement } from 'react'
+import { motion } from 'framer-motion'
 import { Archive, BookOpenText, Layers, Settings } from 'lucide-react'
 
 const items = [
@@ -40,17 +41,20 @@ function BottomNav({ activeTab, onNavigate }) {
           const active = activeTab === screen
 
           return (
-            <button
+            <motion.button
               key={key}
               type="button"
               onClick={() => handleTabClick(screen)}
+              whileHover={{ scale: 1.08, y: -2 }}
+              whileTap={{ scale: 0.88 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               className={`mx-auto flex min-w-[76px] flex-col items-center rounded-2xl px-2 py-2 text-[9px] font-semibold tracking-[0.1em] transition ${
                 active ? 'bg-white/14 text-white shadow-[0_10px_20px_rgba(0,0,0,0.35)]' : 'text-white/45 hover:text-white/70'
               }`}
             >
               {createElement(Icon, { size: 16, className: 'mb-1' })}
               {label}
-            </button>
+            </motion.button>
           )
         })}
       </div>
