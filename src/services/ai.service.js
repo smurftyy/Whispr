@@ -70,8 +70,13 @@ class AIService {
 
     const cleaned = text
       .replace(parsed[0].text, '')
-      .replace(/^(hey,?\s*)?(please\s*)?(can you\s*)?remind me( to| that)?/i, '')
-      .replace(/^\s*i (have to|need to|gotta|should)\s*/i, '')
+      // Strip common opener phrases
+      .replace(/^(hey,?\s*)?(please\s*)?(can you\s*)?remind me( to| that| about)?/i, '')
+      .replace(/^(don'?t forget( to| that| about)?|make sure (i|to)|ping me( about)?|alert me( when| about)?)/i, '')
+      .replace(/^\s*(i (have to|need to|gotta|should|want to|am supposed to)|we need to|remember to)\s*/i, '')
+      .trim()
+      .replace(/\s+(in|on|at|by|every|this|next|the|a|an|and|or|to|for)$/i, '')
+      .replace(/^(in|on|at|by|every|this|next|the|a|an|and|or|to|for)\s+/i, '')
       .trim()
       .replace(/\s+/g, ' ');
     const task = cleaned
