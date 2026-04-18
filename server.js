@@ -41,13 +41,16 @@ const startServer = async () => {
     });
     notifierService.registerAdapter('telegram', telegram);
 
-    // 3. Telegram webhook route (production only — harmless in dev, never called without webhook)
+    // 3. Telegram webhook route — registered before apiRoutes so telegramAuth is never applied
     app.post('/api/webhook/telegram', (req, res) => {
       res.sendStatus(200); // Acknowledge immediately so Telegram doesn't retry
       telegram.processUpdate(req.body);
     });
 
-    // 4. 404 handler — must come after all routes
+    // 4. API routes (telegramAuth applies here but not to the webhook above)
+    app.use('/api', require('./src/routes/api.routes'));
+
+    // 5. 404 handler — must come after all routes
     app.use((req, res) => {
       res.status(404).json({ error: 'Route not found' });
     });

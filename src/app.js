@@ -3,7 +3,6 @@ const express = require('express');
 const env = require('./config/env');
 const logger = require('./utils/logger');
 const miniAppCors = require('./middleware/cors');
-const apiRoutes = require('./routes/api.routes');
 
 const app = express();
 
@@ -32,8 +31,6 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.send('Whispr Backend with Telegram Transport');
 });
-
-app.use('/api', apiRoutes);
 
 // Error handler
 app.use((err, req, res, next) => {
