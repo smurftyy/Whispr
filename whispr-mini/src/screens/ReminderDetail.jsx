@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
 import { ArrowLeft, CalendarDays, Clock3, Pencil, Trash2 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
@@ -70,30 +71,43 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
       <header className="fixed inset-x-0 top-0 z-40 px-4 pt-4 sm:px-6 sm:pt-5">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between">
           <div className="flex items-center gap-3">
-            <button
+            <motion.button
               type="button"
               aria-label="Back"
               onClick={onNavigateDashboard}
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               className="flex h-10 w-10 items-center justify-center rounded-full bg-white/6 text-white shadow-[0_12px_20px_rgba(0,0,0,0.3)]"
             >
               <ArrowLeft size={18} />
-            </button>
+            </motion.button>
             <StatusBadge status={reminderStatus} />
           </div>
 
-          <button
+          <motion.button
             type="button"
             aria-label="Edit reminder"
             onClick={() => onNavigateEdit?.(reminderId)}
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white/6 text-white shadow-[0_12px_20px_rgba(0,0,0,0.3)]"
           >
             <Pencil size={18} />
-          </button>
+          </motion.button>
         </div>
       </header>
 
       <main className="mx-auto min-h-screen w-full max-w-4xl px-4 pb-44 pt-24 sm:px-6 sm:pt-28">
-        {isLoading && <div className="whispr-card h-56 animate-pulse rounded-2xl bg-[var(--whispr-surface)]" />}
+        {isLoading && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22 }}
+            className="whispr-card h-56 animate-pulse rounded-2xl bg-[var(--whispr-surface)]"
+          />
+        )}
 
         {!isLoading && !reminder && (
           <div className="whispr-card rounded-2xl bg-[var(--whispr-surface)] p-6 text-white/70">
@@ -198,7 +212,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
 
       <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/86 to-transparent px-4 pb-safe pt-10 sm:px-6">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">
-          <button
+          <motion.button
             type="button"
             onClick={() => {
               if (!reminder?.id || isCompleting) return
@@ -213,20 +227,24 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
               })
             }}
             disabled={!reminder || isCompleting}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             className="whispr-pill rounded-full bg-white px-6 py-4 text-base font-medium text-black disabled:cursor-not-allowed disabled:opacity-45"
           >
             {isCompleting ? 'Completing…' : 'Mark as Completed'}
-          </button>
+          </motion.button>
 
-          <button
+          <motion.button
             type="button"
             onClick={() => setShowDeleteConfirm(true)}
             disabled={!reminder || isDeleting}
+            whileTap={{ scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             className="whispr-pill flex items-center justify-center gap-2 rounded-full bg-[#2a1414] px-6 py-4 text-base font-medium text-[#ff9b96] disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Trash2 size={18} />
             {isDeleting ? 'Deleting...' : 'Delete Reminder'}
-          </button>
+          </motion.button>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { motion } from 'framer-motion'
 import { CalendarDays, CheckCircle2, Clock3, Mic, Sparkles } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import { useCreateReminder, useExtractReminder, useReminders } from '../hooks/useReminders'
@@ -150,10 +151,13 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
           />
 
           {isVoiceAvailable && (
-            <button
+            <motion.button
               type="button"
               aria-label={isRecording ? 'Stop recording' : 'Voice input'}
               onClick={toggleRecording}
+              whileHover={!isRecording ? { scale: 1.08 } : undefined}
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               className={`absolute bottom-4 right-4 flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur transition ${
                 isRecording
                   ? 'animate-pulse border-red-400/60 bg-red-400/20 text-red-300'
@@ -161,7 +165,7 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
               }`}
             >
               <Mic size={20} />
-            </button>
+            </motion.button>
           )}
         </section>
 
@@ -217,15 +221,18 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
 
       <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/85 to-transparent px-4 pb-safe pt-10 sm:px-6">
         <div className="mx-auto w-full max-w-2xl">
-          <button
+          <motion.button
             type="button"
             onClick={handleConfirm}
             disabled={!canConfirm}
+            whileHover={canConfirm ? { scale: 1.02 } : undefined}
+            whileTap={canConfirm ? { scale: 0.97 } : undefined}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             className="whispr-pill flex w-full items-center justify-center gap-2 rounded-full bg-[var(--whispr-surface)] px-6 py-4 text-lg font-semibold text-white transition duration-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {isCreating ? 'Creating...' : 'Confirm Reminder'}
             <CheckCircle2 size={20} />
-          </button>
+          </motion.button>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { createElement, useEffect, useMemo, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, Clock3, Layers, Plus, Trash2 } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import BottomNav from '../components/BottomNav'
@@ -99,68 +100,86 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
         <section className="mt-8 flex min-h-0 flex-1 flex-col">
           <h2 className="text-4xl text-white">Your Reminders</h2>
 
-          <div className="mt-4 flex-1 space-y-4 overflow-y-auto">
+          <motion.div
+            className="mt-4 flex-1 space-y-4 overflow-y-auto"
+            initial={false}
+          >
             {isLoading &&
-              [1, 2, 3].map((placeholder) => (
-                <div
+              [1, 2, 3].map((placeholder, i) => (
+                <motion.div
                   key={placeholder}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, delay: i * 0.07 }}
                   className="whispr-card h-28 animate-pulse rounded-2xl bg-[var(--whispr-surface)]"
                 />
               ))}
 
             {!isLoading && reminders.length === 0 && (
-              <div className="whispr-card rounded-2xl bg-[var(--whispr-surface)] p-5 text-sm text-white/65">
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22 }}
+                className="whispr-card rounded-2xl bg-[var(--whispr-surface)] p-5 text-sm text-white/65"
+              >
                 No reminders yet. Tap + to create your first one.
-              </div>
+              </motion.div>
             )}
 
-            {!isLoading &&
-              reminders.map((reminder) => {
-                const status = getReminderStatus(reminder)
-                const statusTheme = getStatusTheme(status)
-                const relativeTime = getReminderRelativeTime(reminder)
+            <AnimatePresence initial={false}>
+              {!isLoading &&
+                reminders.map((reminder, i) => {
+                  const status = getReminderStatus(reminder)
+                  const statusTheme = getStatusTheme(status)
+                  const relativeTime = getReminderRelativeTime(reminder)
 
-                return (
-                  <article
-                    key={reminder.id}
-                    className="relative w-full rounded-2xl border-0 p-5 text-left transition duration-200 hover:-translate-y-0.5"
-                    style={{ backgroundColor: statusTheme.cardBg }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onOpenDetail(reminder.id)}
-                      className="absolute inset-0 z-0 rounded-2xl"
-                      aria-label={`Open reminder ${getReminderTitle(reminder)}`}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={(event) => handleOpenDeleteConfirm(event, reminder)}
-                      className="absolute right-4 top-4 z-20 rounded-full bg-black/25 p-2 text-white/80 transition hover:bg-black/40 hover:text-white"
-                      aria-label={`Delete reminder ${getReminderTitle(reminder)}`}
+                  return (
+                    <motion.article
+                      key={reminder.id}
+                      initial={{ opacity: 0, y: 14 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.96 }}
+                      transition={{ duration: 0.24, delay: i * 0.05, ease: [0.25, 0.46, 0.45, 0.94] }}
+                      className="relative w-full rounded-2xl border-0 p-5 text-left transition duration-200 hover:-translate-y-0.5"
+                      style={{ backgroundColor: statusTheme.cardBg }}
                     >
-                      <Trash2 size={16} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenDetail(reminder.id)}
+                        className="absolute inset-0 z-0 rounded-2xl"
+                        aria-label={`Open reminder ${getReminderTitle(reminder)}`}
+                      />
 
-                    <div className="relative z-10 pr-12">
-                      <p className="font-display text-[2rem] leading-tight text-white">
-                        {getReminderTitle(reminder)}
-                      </p>
-                      <p className="mt-2 truncate text-sm text-white/65">
-                        {getReminderSubtitle(reminder)}
-                      </p>
-                    </div>
+                      <motion.button
+                        type="button"
+                        onClick={(event) => handleOpenDeleteConfirm(event, reminder)}
+                        whileTap={{ scale: 0.85 }}
+                        className="absolute right-4 top-4 z-20 rounded-full bg-black/25 p-2 text-white/80 transition hover:bg-black/40 hover:text-white"
+                        aria-label={`Delete reminder ${getReminderTitle(reminder)}`}
+                      >
+                        <Trash2 size={16} />
+                      </motion.button>
 
-                    <div className="relative z-10 mt-4 flex items-center justify-between gap-3">
-                      <StatusBadge status={status} />
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/50">
-                        {relativeTime}
-                      </span>
-                    </div>
-                  </article>
-                )
-              })}
-          </div>
+                      <div className="relative z-10 pr-12">
+                        <p className="font-display text-[2rem] leading-tight text-white">
+                          {getReminderTitle(reminder)}
+                        </p>
+                        <p className="mt-2 truncate text-sm text-white/65">
+                          {getReminderSubtitle(reminder)}
+                        </p>
+                      </div>
+
+                      <div className="relative z-10 mt-4 flex items-center justify-between gap-3">
+                        <StatusBadge status={status} />
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/50">
+                          {relativeTime}
+                        </span>
+                      </div>
+                    </motion.article>
+                  )
+                })}
+            </AnimatePresence>
+          </motion.div>
         </section>
       </main>
 
@@ -175,14 +194,17 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
         confirmClassName="bg-[#ff9b96] text-[#2a1414]"
       />
 
-      <button
+      <motion.button
         type="button"
         aria-label="Create reminder"
         onClick={onOpenCreate}
-        className="fixed bottom-[6.3rem] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-[0_20px_35px_rgba(0,0,0,0.45)] transition duration-200 active:scale-95 sm:right-6"
+        whileTap={{ scale: 0.88 }}
+        whileHover={{ scale: 1.06 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+        className="fixed bottom-[6.3rem] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-[0_20px_35px_rgba(0,0,0,0.45)] sm:right-6"
       >
         <Plus size={24} />
-      </button>
+      </motion.button>
 
       <BottomNav activeTab={activeTab} onNavigate={onNavigate} />
     </div>

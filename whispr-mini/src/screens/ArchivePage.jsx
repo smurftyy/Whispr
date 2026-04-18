@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
 import { Archive, CheckCircle2, Clock3 } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import BottomNav from '../components/BottomNav'
@@ -77,16 +78,19 @@ function ArchivePage({ activeTab, onNavigate, onOpenDetail }) {
           {FILTER_OPTIONS.map((item) => {
             const active = filter === item
             return (
-              <button
+              <motion.button
                 key={item}
                 type="button"
                 onClick={() => setFilter(item)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.93 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 20 }}
                 className={`rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition ${
                   active ? 'bg-white text-black' : 'bg-white/10 text-white/75'
                 }`}
               >
                 {item}
-              </button>
+              </motion.button>
             )
           })}
         </section>
