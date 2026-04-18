@@ -23,7 +23,7 @@ const logger = require('../utils/logger');
 
 /** @type {import('@google/generative-ai').GenerativeModel} */
 const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: env.GEMINI_MODEL });
+const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
 
 // ---------------------------------------------------------------------------
 // Constants
