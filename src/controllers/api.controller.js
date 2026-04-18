@@ -85,13 +85,15 @@ class ApiController {
       }
 
       reminder.status = REMINDER_STATUS.COMPLETED;
-      await reminder.save();
+      await Reminder.updateOne(
+        { _id: reminder._id },
+        { $set: { status: REMINDER_STATUS.COMPLETED } },
+      );
 
       try {
         await schedulerService.cancelReminderJobs(reminder._id.toString());
       } catch (err) {
-        // jobs may not exist if reminder was never scheduled or already fired
-        logger.warn(`cancelReminderJobs skipped for ${reminder._id}: ${err.message}`);
+        logger.warn(`Job cancel failed for ${reminder._id}: ${err.message}`);
       }
 
       return res.json({ reminder: reminderService.serializeReminder(reminder, req.user) });

@@ -135,13 +135,15 @@ class ReminderService {
       throw error;
     }
 
-    reminder.status = REMINDER_STATUS.CANCELLED;
-    await reminder.save();
+    await Reminder.updateOne(
+      { _id: reminder._id },
+      { $set: { status: REMINDER_STATUS.CANCELLED } },
+    );
 
     try {
       await schedulerService.cancelReminderJobs(reminder._id);
-    } catch (error) {
-      logger.error(`Failed to cancel queued jobs for reminder ${reminder._id}:`, error.message);
+    } catch (err) {
+      logger.warn(`Job cancel failed for ${reminder._id}: ${err.message}`);
     }
 
     return reminder;
