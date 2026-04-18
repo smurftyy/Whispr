@@ -138,7 +138,7 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
         <header>
           <h1 className="text-6xl leading-[0.95] text-white sm:text-7xl">Whispr it.</h1>
           <p className="mt-2 text-sm text-white/60">
-           Define it.
+           Commit to it.
           </p>
         </header>
 
@@ -146,7 +146,7 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder="e.g., Remind me to buy coffee tomorrow at 10am..."
+            placeholder="e.g., I have an assignment due tomorrow at 9am..."
             className="whispr-card min-h-[140px] w-full resize-none rounded-2xl bg-[var(--whispr-surface)] p-6 pr-20 text-lg text-white placeholder:text-white/30 focus:outline-none"
           />
 
