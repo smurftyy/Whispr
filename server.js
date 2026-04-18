@@ -27,7 +27,7 @@ const startServer = async () => {
     // 2. Messaging adapter — swap this block to change platforms
     const telegram = new TelegramAdapter(env.TELEGRAM_BOT_TOKEN);
     const webhookUrl = env.isProd
-      ? 'https://whispr-9465.onrender.com/api/webhook/telegram'
+      ? 'https://whispr-9465.onrender.com/webhook/telegram'
       : null;
     await telegram.start(webhookUrl);
     await telegram.configureMiniApp(env.MINI_APP_URL);
@@ -41,8 +41,8 @@ const startServer = async () => {
     });
     notifierService.registerAdapter('telegram', telegram);
 
-    // 3. Telegram webhook route — registered before apiRoutes so telegramAuth is never applied
-    app.post('/api/webhook/telegram', (req, res) => {
+    // 3. Telegram webhook route — outside /api entirely, telegramAuth cannot apply
+    app.post('/webhook/telegram', (req, res) => {
       res.sendStatus(200); // Acknowledge immediately so Telegram doesn't retry
       telegram.processUpdate(req.body);
     });
