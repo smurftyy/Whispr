@@ -78,7 +78,7 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
 
   return (
     <div className="whispr-shell">
-      <TopBar />
+      <TopBar onOpenSettings={() => onNavigate?.('settings')} />
 
       <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 pb-[10rem] pt-20 sm:px-6 sm:pt-24">
         <section>

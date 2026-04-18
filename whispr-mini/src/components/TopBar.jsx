@@ -10,9 +10,22 @@ function getInitials(name) {
   return trimmed.charAt(0).toUpperCase()
 }
 
-function TopBar() {
+function TopBar({ onOpenSettings }) {
   const firstName = getTelegramFirstName()
   const avatar = getTelegramAvatar()
+
+  const handleOpenSettings = () => {
+    if (typeof onOpenSettings === 'function') {
+      onOpenSettings()
+      return
+    }
+
+    window.Telegram?.WebApp?.showPopup?.({
+      title: 'Settings',
+      message: 'Settings coming soon.',
+      buttons: [{ type: 'close' }],
+    })
+  }
 
   return (
     <header className="whispr-topbar fixed inset-x-0 top-0 z-40">
@@ -25,11 +38,7 @@ function TopBar() {
           <button
             type="button"
             aria-label="Settings"
-            onClick={() => window.Telegram?.WebApp?.showPopup?.({
-              title: 'Settings',
-              message: 'Settings coming soon.',
-              buttons: [{ type: 'close' }],
-            })}
+            onClick={handleOpenSettings}
             className="rounded-full p-2 text-white/80 transition hover:bg-white/10 hover:text-white"
           >
             <Settings size={18} />
