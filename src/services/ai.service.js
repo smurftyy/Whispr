@@ -62,8 +62,8 @@ class AIService {
   ruleExtract(text) {
     const parsed = chrono.parse(text, new Date(), { forwardDate: true });
     if (!parsed.length) {
-      const err = new Error('EXTRACTION_FAILED');
-      err.code = 'EXTRACTION_FAILED';
+      const err = new Error('NO_DEADLINE');
+      err.code = 'NO_DEADLINE';
       throw err;
     }
     const eventTime = parsed[0].start.date();
