@@ -4,15 +4,15 @@ const env = require('../config/env');
 const logger = require('../utils/logger');
 
 // ─── CLAUDE SWAP ────────────────────────────────────────────────────────────
-// When API credits are available, uncomment this block and delete the Gemini
-// block below. No other changes needed — the interface is identical.
+// The claudeExtract method below uses fetch directly (no SDK required).
+// To switch to the Anthropic SDK instead, replace claudeExtract with:
 //
-// import Anthropic from '@anthropic-ai/sdk';
+// const Anthropic = require('@anthropic-ai/sdk');
 // const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 //
 // async function callAI(prompt) {
 //   const response = await anthropic.messages.create({
-//     model: 'claude-opus-4-6',
+//     model: env.ANTHROPIC_MODEL,
 //     max_tokens: 1024,
 //     messages: [{ role: 'user', content: prompt }],
 //   });
@@ -42,7 +42,7 @@ const URGENCY_MEDIUM_THRESHOLD_MIN = 1440; // 24 hours
 class AIService {
   /**
    * Extract a structured reminder from natural-language text.
-   * Routes to Claude if AI_PROVIDER=claude and CLAUDE_API_KEY is set,
+   * Routes to Claude if AI_PROVIDER=claude and ANTHROPIC_API_KEY is set,
    * otherwise uses the deterministic chrono-node rule extractor.
    *
    * @param {string} messageText - Raw user message
@@ -53,7 +53,7 @@ class AIService {
       throw new Error(`Input too long: ${messageText.length} characters (max 500)`);
     }
 
-    if (env.AI_PROVIDER === 'claude' && env.CLAUDE_API_KEY) {
+    if (env.AI_PROVIDER === 'claude' && env.ANTHROPIC_API_KEY) {
       return this.claudeExtract(messageText);
     }
     return this.ruleExtract(messageText);
@@ -149,12 +149,12 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': env.CLAUDE_API_KEY,
+        'x-api-key': env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: env.ANTHROPIC_MODEL,
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -232,7 +232,7 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
   }
 
   /**
-   * Pure-local fallback when Gemini is unavailable.
+   * Pure-local fallback using chrono-node when no AI provider is available.
    * @param {string} messageText
    * @param {Date} now
    * @returns {{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string}}
