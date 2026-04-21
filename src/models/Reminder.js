@@ -44,7 +44,7 @@ const reminderSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: Object.values(REMINDER_STATUS),
-    default: REMINDER_STATUS.ACTIVE,
+    default: REMINDER_STATUS.PENDING,
     index: true,
   },
   frequency: {
@@ -75,6 +75,32 @@ const reminderSchema = new mongoose.Schema({
     default: null,
     index: true,
   },
+  /** UTC time this reminder is scheduled to fire (deadline minus notification offset). */
+  scheduledAt: {
+    type: Date,
+    index: true,
+  },
+  /** Bull job ID — used for cancellation. */
+  scheduledJobId: {
+    type: String,
+    default: null,
+    index: true,
+  },
+  /** Set when a worker atomically claims this reminder for firing. */
+  claimedAt: {
+    type: Date,
+    default: null,
+  },
+  /** Set after the notification is delivered successfully. */
+  firedAt: {
+    type: Date,
+    default: null,
+  },
+  /** Populated when delivery fails permanently. */
+  failureReason: {
+    type: String,
+    default: null,
+  },
 });
 
 // Prevent duplicate reminders from the same origin message
@@ -88,12 +114,11 @@ reminderSchema.pre('save', async function () {
   this.updatedAt = new Date();
 });
 
-// Find active reminders (must include 'active' so newly created reminders appear in /list)
 reminderSchema.statics.findActive = function (userId) {
   const now = new Date();
   return this.find({
     userId,
-    status: { $in: ['pending', 'active', 'sent'] },
+    status: { $in: ['pending', 'parsed', 'scheduled', 'firing', 'fired'] },
     'extracted.deadline': { $gte: now },
   }).sort({ 'extracted.deadline': 1 });
 };

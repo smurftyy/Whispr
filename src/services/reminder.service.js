@@ -4,6 +4,7 @@ const Reminder = require('../models/Reminder');
 const User = require('../models/User');
 const aiService = require('./ai.service');
 const schedulerService = require('./scheduler.service');
+const reminderFireQueue = require('../queues/reminder.queue');
 const logger = require('../utils/logger');
 const {
   CONVERSATION_STATES,
@@ -12,6 +13,7 @@ const {
   REMINDER_STATUS,
   REMINDER_TYPE,
 } = require('../constants');
+const { canTransition, IllegalTransitionError } = require('../lib/state-machine');
 
 const STRATEGY_TIMING_MAP = {
   [NOTIFICATION_STRATEGIES.IMMEDIATE]: [0],
@@ -19,6 +21,25 @@ const STRATEGY_TIMING_MAP = {
   [NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE]: [60],
   [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]: [1440],
 };
+
+/**
+ * Canonical transition helper. Reads current status, validates the transition,
+ * then applies it with a CAS guard to prevent lost-update races.
+ */
+async function transitionReminder(reminderId, targetStatus, patch = {}) {
+  const reminder = await Reminder.findById(reminderId);
+  if (!reminder) throw new Error('Reminder not found');
+  if (!canTransition(reminder.status, targetStatus)) {
+    throw new IllegalTransitionError(reminder.status, targetStatus);
+  }
+  const updated = await Reminder.findOneAndUpdate(
+    { _id: reminderId, status: reminder.status }, // CAS guard — prevents lost-update races
+    { $set: { status: targetStatus, ...patch } },
+    { new: true },
+  );
+  if (!updated) throw new IllegalTransitionError(reminder.status, targetStatus);
+  return updated;
+}
 
 function normalizeExtracted(extracted) {
   return {
@@ -76,6 +97,11 @@ class ReminderService {
     const notificationTiming =
       STRATEGY_TIMING_MAP[strategy] || STRATEGY_TIMING_MAP[NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE];
 
+    const deadlineMs = new Date(extracted.eventTime).getTime();
+    const firstOffsetMs = (notificationTiming[0] || 0) * 60 * 1000;
+    const scheduledAt = new Date(deadlineMs - firstOffsetMs);
+
+    // Create at 'parsed' — AI extraction has already succeeded at this point.
     const reminder = await Reminder.create({
       userId: user._id,
       originalMessage: originalMessage || extracted.task,
@@ -85,14 +111,23 @@ class ReminderService {
         urgency: extracted.urgency,
         type: extracted.type || REMINDER_TYPE.OTHER,
       },
-      status: REMINDER_STATUS.ACTIVE,
+      status: REMINDER_STATUS.PARSED,
       frequency: extracted.recurrence || REMINDER_FREQUENCY.NONE,
       notificationTiming,
+      scheduledAt,
     });
 
     let schedulingFailed = false;
     try {
-      await schedulerService.scheduleReminder(reminder, user);
+      const delay = Math.max(0, scheduledAt.getTime() - Date.now());
+      const job = await reminderFireQueue.add(
+        'fire',
+        { reminderId: reminder._id.toString() },
+        { jobId: reminder._id.toString(), delay },
+      );
+      await transitionReminder(reminder._id, REMINDER_STATUS.SCHEDULED, { scheduledJobId: job.id });
+      reminder.status = REMINDER_STATUS.SCHEDULED;
+      reminder.scheduledJobId = job.id;
     } catch (error) {
       schedulingFailed = true;
       logger.error(`Scheduling failed for reminder ${reminder._id}:`, error.message);
@@ -106,7 +141,16 @@ class ReminderService {
     try {
       return await Reminder.find({
         userId,
-        status: { $in: [REMINDER_STATUS.ACTIVE, REMINDER_STATUS.PENDING, REMINDER_STATUS.COMPLETED] },
+        status: {
+          $in: [
+            REMINDER_STATUS.PENDING,
+            REMINDER_STATUS.PARSED,
+            REMINDER_STATUS.SCHEDULED,
+            REMINDER_STATUS.FIRING,
+            REMINDER_STATUS.FIRED,
+            REMINDER_STATUS.COMPLETED,
+          ],
+        },
       }).sort({ 'extracted.deadline': 1 });
     } catch (error) {
       logger.error(`Failed to list reminders for user ${userId}:`, error.message);
@@ -124,9 +168,17 @@ class ReminderService {
     if (!reminder) {
       const reminders = await Reminder.find({
         userId,
-        status: { $in: [REMINDER_STATUS.PENDING, REMINDER_STATUS.ACTIVE, REMINDER_STATUS.SENT] },
+        status: {
+          $in: [
+            REMINDER_STATUS.PENDING,
+            REMINDER_STATUS.PARSED,
+            REMINDER_STATUS.SCHEDULED,
+          ],
+        },
       });
-      reminder = reminders.find((candidate) => candidate._id.toString().endsWith(reminderId)) || null;
+      reminder = reminders.find(
+        (candidate) => candidate._id.toString().endsWith(reminderId),
+      ) || null;
     }
 
     if (!reminder) {
@@ -135,10 +187,7 @@ class ReminderService {
       throw error;
     }
 
-    await Reminder.updateOne(
-      { _id: reminder._id },
-      { $set: { status: REMINDER_STATUS.CANCELLED } },
-    );
+    await transitionReminder(reminder._id, REMINDER_STATUS.CANCELLED);
 
     try {
       await schedulerService.cancelReminderJobs(reminder._id);
@@ -156,8 +205,11 @@ class ReminderService {
     if (user.draftReminderId) {
       const reminder = await Reminder.findOne({ _id: user.draftReminderId, userId: user._id });
       if (reminder) {
-        reminder.status = REMINDER_STATUS.CANCELLED;
-        await reminder.save();
+        try {
+          await transitionReminder(reminder._id, REMINDER_STATUS.CANCELLED);
+        } catch (error) {
+          logger.error(`Failed to cancel draft reminder ${reminder._id}:`, error.message);
+        }
 
         try {
           await schedulerService.cancelReminderJobs(reminder._id);
@@ -211,3 +263,4 @@ class ReminderService {
 }
 
 module.exports = new ReminderService();
+module.exports.transitionReminder = transitionReminder;

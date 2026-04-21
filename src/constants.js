@@ -29,12 +29,19 @@ const COMMANDS = {
 // ---------------------------------------------------------------------------
 
 const REMINDER_STATUS = {
+  // Canonical state-machine statuses
+  PENDING: 'pending',
+  PARSED: 'parsed',
+  SCHEDULED: 'scheduled',
+  FIRING: 'firing',
+  FIRED: 'fired',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  CANCELLED: 'cancelled',
+  // Legacy values kept for backward compatibility with existing DB documents
   DRAFT: 'draft',
   ACTIVE: 'active',
-  PENDING: 'pending',
   SENT: 'sent',
-  COMPLETED: 'completed',
-  CANCELLED: 'cancelled',
 };
 
 const REMINDER_FREQUENCY = {

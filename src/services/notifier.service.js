@@ -1,4 +1,6 @@
 // src/services/notifier.service.js — Platform-Agnostic Message Sender
+const Reminder = require('../models/Reminder');
+const User = require('../models/User');
 const logger = require('../utils/logger');
 
 /**
@@ -129,4 +131,42 @@ class NotifierService {
   }
 }
 
-module.exports = new NotifierService();
+const _instance = new NotifierService();
+
+/**
+ * Bull job processor for 'reminder_fire' jobs.
+ * Atomically claims the reminder before sending so concurrent workers
+ * never double-fire the same reminder.
+ */
+async function processReminderFire(job) {
+  const { reminderId } = job.data;
+
+  const reminder = await Reminder.findOneAndUpdate(
+    { _id: reminderId, status: { $in: ['scheduled', 'firing'] } },
+    { $set: { status: 'firing', claimedAt: new Date() } },
+    { new: true },
+  );
+
+  if (!reminder) {
+    logger.info(`Reminder ${reminderId} already fired or not found — skipping`);
+    return;
+  }
+
+  const user = await User.findById(reminder.userId);
+  if (!user || !user.isActive) {
+    reminder.status = 'failed';
+    reminder.failureReason = 'User not found or inactive';
+    await reminder.save();
+    logger.warn(`Reminder ${reminderId} failed: user unavailable`);
+    return;
+  }
+
+  await _instance.sendReminder(reminder, user);
+
+  reminder.status = 'fired';
+  reminder.firedAt = new Date();
+  await reminder.save();
+}
+
+module.exports = _instance;
+module.exports.processReminderFire = processReminderFire;
