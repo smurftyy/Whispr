@@ -77,6 +77,12 @@ const reminderSchema = new mongoose.Schema({
   },
 });
 
+// Prevent duplicate reminders from the same origin message
+reminderSchema.index(
+  { userId: 1, platformMessageId: 1 },
+  { unique: true, partialFilterExpression: { platformMessageId: { $exists: true } } }
+);
+
 // Update timestamp on save
 reminderSchema.pre('save', async function () {
   this.updatedAt = new Date();
