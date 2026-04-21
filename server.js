@@ -12,7 +12,7 @@ const notifierService = require('./src/services/notifier.service');
 const webhookController = require('./src/controllers/webhook.controller');
 
 // Scheduler is imported for its side-effect (constructor starts the worker).
-require('./src/services/scheduler.service');
+const schedulerService = require('./src/services/scheduler.service');
 
 // ---------------------------------------------------------------------------
 // Bootstrap
@@ -27,9 +27,10 @@ const startServer = async () => {
     // 2. Messaging adapter — swap this block to change platforms
     const telegram = new TelegramAdapter(env.TELEGRAM_BOT_TOKEN);
     const webhookUrl = env.isProd
-      ? 'https://whispr-9465.onrender.com/api/webhook/telegram'
+      ? 'https://whispr-9465.onrender.com/webhook/telegram'
       : null;
     await telegram.start(webhookUrl);
+    await telegram.configureMiniApp(env.MINI_APP_URL);
     telegram.onMessage(async (from, body, messageId) => {
       logger.info(`Received message from ${from}: ${body}`);
       try {
@@ -40,30 +41,36 @@ const startServer = async () => {
     });
     notifierService.registerAdapter('telegram', telegram);
 
-    // 3. Telegram webhook route (production only — harmless in dev, never called without webhook)
-    app.post('/api/webhook/telegram', (req, res) => {
-      res.sendStatus(200); // Acknowledge immediately so Telegram doesn't retry
-      telegram.processUpdate(req.body);
-    });
+    // 3. Telegram webhook route — outside /api entirely, telegramAuth cannot apply
+    //    Persist → enqueue → 200 (in that order) so crashes leave updates retryable.
+    app.post('/webhook/telegram', (req, res) => webhookController.handleTelegramWebhook(req, res));
 
-    // 4. 404 handler — must come after all routes
+    // 4. API routes (telegramAuth applies here but not to the webhook above)
+    app.use('/api', require('./src/routes/api.routes'));
+
+    // 5. 404 handler — must come after all routes
     app.use((req, res) => {
       res.status(404).json({ error: 'Route not found' });
     });
 
     // 5. HTTP server
-    app.listen(env.PORT, () => {
+    const server = app.listen(env.PORT, () => {
       logger.info(`🔔 Whispr running on port ${env.PORT}`);
       logger.info(`Environment: ${env.NODE_ENV}`);
       logger.info('Telegram Transport: Active');
     });
+    return server;
   } catch (err) {
     logger.error('❌ Failed to start server:', err.message);
     process.exit(1);
   }
 };
 
-startServer();
+let serverInstance = null;
+
+startServer().then((server) => {
+  serverInstance = server;
+});
 
 // ---------------------------------------------------------------------------
 // Process-level error handlers
@@ -74,9 +81,24 @@ process.on('unhandledRejection', (err) => {
   process.exit(1);
 });
 
-const gracefulShutdown = (signal) => {
+const gracefulShutdown = async (signal) => {
   logger.info(`Received ${signal}. Shutting down gracefully...`);
-  process.exit(0);
+  try {
+    await webhookController.shutdownQueue();
+    await schedulerService.shutdown();
+    await notifierService.shutdown();
+    await new Promise((resolve, reject) => {
+      if (!serverInstance) return resolve();
+      serverInstance.close((error) => {
+        if (error) return reject(error);
+        return resolve();
+      });
+    });
+    process.exit(0);
+  } catch (error) {
+    logger.error('Graceful shutdown failed:', error.message);
+    process.exit(1);
+  }
 };
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

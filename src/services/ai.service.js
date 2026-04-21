@@ -1,29 +1,24 @@
-// src/services/whispr.service.js — AI Extraction Engine (Gemini)
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+// src/services/ai.service.js — AI Extraction Engine
 const chrono = require('chrono-node');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 
 // ─── CLAUDE SWAP ────────────────────────────────────────────────────────────
-// When API credits are available, uncomment this block and delete the Gemini
-// block below. No other changes needed — the interface is identical.
+// The claudeExtract method below uses fetch directly (no SDK required).
+// To switch to the Anthropic SDK instead, replace claudeExtract with:
 //
-// import Anthropic from '@anthropic-ai/sdk';
+// const Anthropic = require('@anthropic-ai/sdk');
 // const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 //
 // async function callAI(prompt) {
 //   const response = await anthropic.messages.create({
-//     model: 'claude-opus-4-6',
+//     model: env.ANTHROPIC_MODEL,
 //     max_tokens: 1024,
 //     messages: [{ role: 'user', content: prompt }],
 //   });
 //   return response.content[0].text;
 // }
 // ────────────────────────────────────────────────────────────────────────────
-
-/** @type {import('@google/generative-ai').GenerativeModel} */
-const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: env.GEMINI_MODEL });
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -36,7 +31,7 @@ const URGENCY_HIGH_THRESHOLD_MIN = 30;
 const URGENCY_MEDIUM_THRESHOLD_MIN = 1440; // 24 hours
 
 /**
- * WhisprService — Natural-language extraction powered by Gemini AI.
+ * WhisprService — Natural-language extraction powered by chrono-node (rule-based).
  *
  * Responsibilities:
  *   1. Parse user messages into structured reminder JSON.
@@ -44,10 +39,11 @@ const URGENCY_MEDIUM_THRESHOLD_MIN = 1440; // 24 hours
  *
  * The service never computes scheduling delays — that is the scheduler's job.
  */
-class WhisprService {
+class AIService {
   /**
    * Extract a structured reminder from natural-language text.
-   * Falls back to chrono-node if Gemini is unavailable or returns no eventTime.
+   * Routes to Claude if AI_PROVIDER=claude and ANTHROPIC_API_KEY is set,
+   * otherwise uses the deterministic chrono-node rule extractor.
    *
    * @param {string} messageText - Raw user message
    * @returns {Promise<{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string, type: string}>}
@@ -57,17 +53,73 @@ class WhisprService {
       throw new Error(`Input too long: ${messageText.length} characters (max 500)`);
     }
 
+    if (env.AI_PROVIDER === 'claude' && env.ANTHROPIC_API_KEY) {
+      return this.claudeExtract(messageText);
+    }
+    return this.ruleExtract(messageText);
+  }
+
+  ruleExtract(text) {
+    const parsed = chrono.parse(text, new Date(), { forwardDate: true });
+    if (!parsed.length) {
+      const err = new Error('NO_DEADLINE');
+      err.code = 'NO_DEADLINE';
+      throw err;
+    }
+    const eventTime = parsed[0].start.date();
+
+    const cleaned = text
+      .replace(parsed[0].text, '')
+      // Strip common opener phrases
+      .replace(/^(hey,?\s*)?(please\s*)?(can you\s*)?remind me( to| that| about)?/i, '')
+      .replace(/^(don'?t forget( to| that| about)?|make sure (i|to)|ping me( about)?|alert me( when| about)?)/i, '')
+      .replace(/^\s*(i (have to|need to|gotta|should|want to|am supposed to)|we need to|remember to)\s*/i, '')
+      .trim()
+      .replace(/\s+(in|on|at|by|every|this|next|the|a|an|and|or|to|for)$/i, '')
+      .replace(/^(in|on|at|by|every|this|next|the|a|an|and|or|to|for)\s+/i, '')
+      .trim()
+      .replace(/\s+/g, ' ');
+    const task = cleaned
+      ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+      : 'Reminder';
+
+    const lower = text.toLowerCase();
+    const recurrence =
+      /\bevery day|daily\b/.test(lower) ? 'daily' :
+      /\bevery week|weekly|every (mon|tue|wed|thu|fri|sat|sun)/.test(lower) ? 'weekly' :
+      'none';
+    const urgency =
+      /\basap|urgent|now|immediately\b/.test(lower) ? 'high' :
+      /\bwhen you can|sometime|eventually\b/.test(lower) ? 'low' :
+      'medium';
+    const type =
+      /\bmeet|call|zoom|sync\b/.test(lower) ? 'meeting' :
+      /\bassignment|homework\b/.test(lower) ? 'assignment' :
+      /\bexam|study\b/.test(lower) ? 'exam' :
+      /\bclass|lecture\b/.test(lower) ? 'class' :
+      'personal';
+
+    return {
+      task,
+      eventTime: eventTime.toISOString(),
+      recurrence,
+      urgency,
+      suggestedNotificationStrategy: '1_hour_before',
+      type,
+    };
+  }
+
+  async claudeExtract(messageText) {
     const now = new Date();
 
-    try {
-      const prompt = `You are an academic assistant helping students extract reminder information from messages.
+    const prompt = `You are an academic assistant helping students extract reminder information from messages.
 Current Reference Time: ${now.toISOString()} (${now.toString()})
 
 Extract and infer the following from this message:
 - task: The main task/assignment (concise description)
 - eventTime: The due date/time (ISO 8601 format). If missing or ambiguous, return null.
 - recurrence: one of: none, daily, weekly. Infer from context (e.g., "every Monday" -> weekly). Default: none.
-- urgency: one of: low, medium, high. 
+- urgency: one of: low, medium, high.
  - type: one of: assignment, exam, class, deadline, meeting, call, event, personal, health, other.
   Rules for urgency:
   - high: eventTime is < 30 minutes from now.
@@ -94,22 +146,43 @@ Respond ONLY with valid JSON in this exact format:
 }
 Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: env.ANTHROPIC_MODEL,
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
 
-      const extracted = JSON.parse(this._stripMarkdownFences(text));
+    if (!response.ok) {
+      logger.error(`Claude API error: ${response.status}`);
+      throw new Error('EXTRACTION_FAILED');
+    }
 
-      // Chrono-node fallback if AI returned null for eventTime
+    const data = await response.json();
+    const rawText = data.content?.[0]?.text;
+
+    if (!rawText) {
+      throw new Error('EXTRACTION_FAILED');
+    }
+
+    try {
+      const extracted = JSON.parse(this._stripMarkdownFences(rawText));
+
       if (!extracted.eventTime) {
         this._recoverEventTimeWithChrono(extracted, messageText, now);
       }
 
-      logger.info('Extraction successful:', JSON.stringify(extracted));
+      logger.info('Claude extraction successful:', JSON.stringify(extracted));
       return extracted;
-    } catch (error) {
-      logger.error('Extraction error:', error.message);
-      throw error;
+    } catch {
+      throw new Error('EXTRACTION_FAILED');
     }
   }
 
@@ -159,7 +232,7 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
   }
 
   /**
-   * Pure-local fallback when Gemini is unavailable.
+   * Pure-local fallback using chrono-node when no AI provider is available.
    * @param {string} messageText
    * @param {Date} now
    * @returns {{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string}}
@@ -177,4 +250,4 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
   }
 }
 
-module.exports = new WhisprService();
+module.exports = new AIService();

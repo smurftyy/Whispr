@@ -1,0 +1,15 @@
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <circle cx="50" cy="50" r="50" fill="#0a0a0a"/>
+  <text
+    x="50"
+    y="71"
+    text-anchor="middle"
+    font-family="'Newsreader', 'Playfair Display', Georgia, 'Times New Roman', serif"
+    font-style="italic"
+    font-weight="700"
+    font-size="72"
+    fill="#ffffff"
+    letter-spacing="-2"
+  >W</text>
+</svg>

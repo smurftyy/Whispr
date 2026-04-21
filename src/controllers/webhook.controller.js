@@ -1,8 +1,24 @@
 // src/controllers/webhook.controller.js — Message Handler (Platform-Agnostic)
+const Queue = require('bull');
 const User = require('../models/User');
+const Message = require('../models/Message');
+const env = require('../config/env');
 const notifierService = require('../services/notifier.service');
 const reminderService = require('../services/reminder.service');
 const logger = require('../utils/logger');
+
+// ---------------------------------------------------------------------------
+// Inbound message queue — persists before processing, deduplicates via jobId
+// ---------------------------------------------------------------------------
+
+const useTls = env.REDIS_URL.startsWith('rediss://');
+const messageQueue = new Queue('messages', env.REDIS_URL, {
+  redis: {
+    tls: useTls ? { rejectUnauthorized: false } : undefined,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  },
+});
 const {
   CONVERSATION_STATES,
   COMMANDS,
@@ -30,6 +46,117 @@ const STRATEGY_LABELS = {
  *                     → ask for clarification only when eventTime is null
  */
 class WebhookController {
+  constructor() {
+    this._setupQueueWorker();
+  }
+
+  // -------------------------------------------------------------------------
+  // HTTP handler — Telegram webhook endpoint
+  // -------------------------------------------------------------------------
+
+  /**
+   * POST /webhook/telegram
+   *
+   * Correct ordering:
+   *   1. Idempotency check   — return 200 immediately on replay
+   *   2. Persist raw update  — before any response so crashes are retryable
+   *   3. Enqueue processing  — jobId deduplicates concurrent retries in Bull
+   *   4. Respond 200         — only after both writes succeed
+   *
+   * Returns 500 on Mongo/Redis failure so Telegram retries the update.
+   *
+   * @param {import('express').Request} req
+   * @param {import('express').Response} res
+   */
+  async handleTelegramWebhook(req, res) {
+    const messageId = String(req.body?.update_id ?? '');
+    if (!messageId) {
+      logger.warn('Webhook received update with no update_id — ignoring');
+      return res.sendStatus(200);
+    }
+
+    try {
+      // 1. Idempotency — already processed, nothing more to do
+      if (await Message.exists({ messageId })) {
+        logger.info(`Duplicate update ${messageId} — idempotent no-op`);
+        return res.sendStatus(200);
+      }
+
+      // 2. Persist before responding so a crash leaves the update retryable
+      await Message.create({ messageId, rawPayload: req.body, status: 'received' });
+
+      // 3. Enqueue — jobId prevents a second job if this request races another
+      await messageQueue.add(
+        'message_received',
+        { messageId },
+        { jobId: messageId, removeOnComplete: 1000, removeOnFail: 5000 },
+      );
+
+      // 4. Respond only after both writes are durable
+      return res.sendStatus(200);
+    } catch (err) {
+      // E11000: concurrent request already inserted this Message — safe to ack
+      if (err.code === 11000) {
+        logger.info(`Race-condition duplicate update ${messageId} — idempotent no-op`);
+        return res.sendStatus(200);
+      }
+      logger.error(`Webhook persistence error for update ${messageId}:`, err.message);
+      // Return 500 so Telegram retries — do NOT swallow the error with a 200
+      return res.sendStatus(500);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Queue worker — consumes 'message_received' jobs
+  // -------------------------------------------------------------------------
+
+  _setupQueueWorker() {
+    messageQueue.process('message_received', async (job) => {
+      const { messageId } = job.data;
+
+      const message = await Message.findOne({ messageId });
+      if (!message) {
+        logger.error(`Message document not found for update ${messageId} — skipping`);
+        return;
+      }
+
+      const msg = message.rawPayload?.message;
+      if (!msg?.text || !msg?.from?.id) {
+        // Non-text update (sticker, callback_query, etc.) — acknowledge and move on
+        message.status = 'parsed';
+        await message.save();
+        return;
+      }
+
+      try {
+        await this.processMessage(
+          msg.from.id.toString(),
+          msg.text,
+          msg.message_id?.toString(),
+        );
+        message.status = 'parsed';
+        await message.save();
+      } catch (err) {
+        message.status = 'failed';
+        await message.save();
+        throw err; // surface to Bull so it retries
+      }
+    });
+
+    messageQueue.on('failed', (job, err) => {
+      logger.error(`Message job ${job.id} failed:`, err.message);
+    });
+  }
+
+  async shutdownQueue() {
+    await messageQueue.close();
+    logger.info('Message queue shut down cleanly');
+  }
+
+  // -------------------------------------------------------------------------
+  // State machine — entry point for every inbound message
+  // -------------------------------------------------------------------------
+
   /**
    * Entry point for every inbound message regardless of transport.
    * @param {string} platformId - User ID on the messaging platform
@@ -47,7 +174,10 @@ class WebhookController {
         logger.info(`New user created: ${platform}:${platformId}`);
         user.conversationState = CONVERSATION_STATES.SELECT_PERSONA;
         await user.save();
-        await notifierService.send(platformId, MESSAGES.WELCOME, platform);
+        await notifierService.send(platformId, MESSAGES.WELCOME, platform, {
+          webAppUrl: env.MINI_APP_URL,
+          buttonText: 'Open Mini App',
+        });
         await notifierService.send(platformId, MESSAGES.selectPersona(), platform);
       }
 
@@ -55,6 +185,7 @@ class WebhookController {
 
       // --- Global commands (available in any state) ---
       const command = messageText.trim().toLowerCase();
+      if (command === COMMANDS.START) return this._handleStart(user, platformId, platform);
       if (command === COMMANDS.HELP)   return this._handleHelp(platformId, platform);
       if (command === COMMANDS.LIST)   return this._handleList(user, platformId, platform);
       if (command === COMMANDS.PROFILE) return this._handleProfile(user, platformId, platform);
@@ -164,7 +295,10 @@ class WebhookController {
         `Type /list to view all reminders or /delete [id] to remove one.`;
 
     try {
-      await notifierService.send(platformId, summary, platform);
+      await notifierService.send(platformId, summary, platform, {
+        webAppUrl: env.MINI_APP_URL,
+        buttonText: 'Open Mini App',
+      });
     } catch (sendErr) {
       logger.error('Failed to send confirmation:', sendErr.message);
     }
@@ -264,6 +398,17 @@ class WebhookController {
 
   async _handleHelp(platformId, platform) {
     return notifierService.send(platformId, MESSAGES.helpText(), platform);
+  }
+
+  async _handleStart(user, platformId, platform) {
+    const message = user.persona
+      ? 'Welcome back. Open the Mini App to view and manage your reminders.'
+      : 'Welcome to Whispr. Open the Mini App to manage reminders, or reply here to keep chatting.';
+
+    return notifierService.send(platformId, message, platform, {
+      webAppUrl: env.MINI_APP_URL,
+      buttonText: 'Open Mini App',
+    });
   }
 
   async _handleProfile(user, platformId, platform) {

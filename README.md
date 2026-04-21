@@ -52,8 +52,20 @@ Whispr has two entry points: Telegram updates flow through the bot controller, w
 | `TZ` | No | Optional server timezone override. |
 | `MINI_APP_URL` | Yes | Required for Mini App launch button. |
 
+## Database Migrations
+
+### fix-indexes (run once after deploy)
+Drops the legacy `phoneNumber_1` unique index that blocks null-phoneNumber users,
+then syncs the correct partial indexes for `User` and `Reminder`.
+
+```bash
+node scripts/fix-indexes.js
+```
+
+Safe to run multiple times — idempotent.
+
 ## Production Deployment
-Production is deployed on Render. `WEBHOOK_URL` must be set to the public URL for the Telegram webhook endpoint; in `NODE_ENV=production` the app automatically registers the Telegram webhook, and in development it uses polling.
+Production is deployed on Render. In `NODE_ENV=production` the server registers the Telegram webhook automatically using the hardcoded Render URL in `server.js`; in development it uses polling instead.
 
 ## Telegram Mini App Setup (in progress)
 1. Set `MINI_APP_URL` in environment

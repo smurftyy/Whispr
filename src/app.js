@@ -1,6 +1,8 @@
 // src/app.js - Express Application
 const express = require('express');
+const env = require('./config/env');
 const logger = require('./utils/logger');
+const miniAppCors = require('./middleware/cors');
 
 const app = express();
 
@@ -13,6 +15,8 @@ app.use((req, res, next) => {
   logger.info(`${req.method} ${req.path}`);
   next();
 });
+
+app.use(miniAppCors);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -33,7 +37,7 @@ app.use((err, req, res, next) => {
   logger.error('Error:', err);
   res.status(500).json({
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 

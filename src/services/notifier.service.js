@@ -1,5 +1,8 @@
 // src/services/notifier.service.js — Platform-Agnostic Message Sender
+const Reminder = require('../models/Reminder');
+const User = require('../models/User');
 const logger = require('../utils/logger');
+const { transitionReminder } = require('../lib/state-machine');
 
 /**
  * NotifierService acts as a message router.  Adapters are registered at boot
@@ -32,7 +35,7 @@ class NotifierService {
    * @param {string} platform - Registered platform name
    * @returns {Promise<{success: boolean, error?: string}>}
    */
-  async send(to, message, platform) {
+  async send(to, message, platform, options = {}) {
     const adapter = this.adapters.get(platform);
     if (!adapter) {
       const msg = `No adapter registered for platform "${platform}"`;
@@ -42,7 +45,7 @@ class NotifierService {
 
     try {
       logger.info(`Sending ${platform} message to ${to}`);
-      return await adapter.send(to, message);
+      return await adapter.send(to, message, options);
     } catch (error) {
       logger.error(`Notifier: failed to send ${platform} message to ${to}:`, error.message);
       throw error;
@@ -122,6 +125,45 @@ class NotifierService {
     if (user.persona === 'business') return 'Quick nudge before your work item. :)';
     return '';
   }
+
+  async shutdown() {
+    logger.info('NotifierService shut down cleanly');
+    // extend this if adapters ever hold open connections
+  }
 }
 
-module.exports = new NotifierService();
+const _instance = new NotifierService();
+
+/**
+ * Bull job processor for 'reminder_fire' jobs.
+ * Atomically claims the reminder before sending so concurrent workers
+ * never double-fire the same reminder.
+ */
+async function processReminderFire(job) {
+  const { reminderId } = job.data;
+
+  const reminder = await Reminder.findOneAndUpdate(
+    { _id: reminderId, status: { $in: ['scheduled', 'firing'] } },
+    { $set: { status: 'firing', claimedAt: new Date() } },
+    { new: true },
+  );
+
+  if (!reminder) {
+    logger.info(`Reminder ${reminderId} already fired or not found — skipping`);
+    return;
+  }
+
+  const user = await User.findById(reminder.userId);
+  if (!user || !user.isActive) {
+    await transitionReminder(reminder._id, 'failed', { failureReason: 'User not found or inactive' });
+    logger.warn(`Reminder ${reminderId} failed: user unavailable`);
+    return;
+  }
+
+  await _instance.sendReminder(reminder, user);
+
+  await transitionReminder(reminder._id, 'fired', { firedAt: new Date() });
+}
+
+module.exports = _instance;
+module.exports.processReminderFire = processReminderFire;

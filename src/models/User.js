@@ -8,7 +8,7 @@ const userSchema = new mongoose.Schema({
   platform: {
     type: String,
     required: true,
-    default: 'telegram', // Default to whatsapp for migration
+    default: 'telegram', // Telegram is the only active platform
   },
   platformId: {
     type: String,
@@ -74,6 +74,14 @@ const userSchema = new mongoose.Schema({
 
 // Compound unique index for platform identity
 userSchema.index({ platform: 1, platformId: 1 }, { unique: true });
+
+// Enforce phoneNumber uniqueness only when the field is a real string value.
+// A plain unique index treats null as a value, causing E11000 for every second
+// user with no phone number. The partial filter skips null/missing entirely.
+userSchema.index(
+  { phoneNumber: 1 },
+  { unique: true, partialFilterExpression: { phoneNumber: { $type: 'string' } } }
+);
 
 /**
  * MIGRATION NOTES:

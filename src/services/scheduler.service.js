@@ -1,54 +1,12 @@
-// src/services/scheduler.service.js — Deterministic Reminder Scheduler
-const Queue = require('bull');
+// src/services/scheduler.service.js — Startup backfill + job cancellation
 const mongoose = require('mongoose');
 const Reminder = require('../models/Reminder');
-const User = require('../models/User');
-const notifierService = require('./notifier.service');
-const env = require('../config/env');
+const reminderFireQueue = require('../queues/reminder.queue');
 const logger = require('../utils/logger');
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** Interval between periodic rehydration sweeps (ms). */
-const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-
-/** Maximum backoff delay for failed Bull jobs (ms). */
-const MAX_BACKOFF_DELAY_MS = 2000;
-
-// ---------------------------------------------------------------------------
-// Queue setup
-// ---------------------------------------------------------------------------
-
-const useTls = env.REDIS_URL.startsWith('rediss://');
-
-const reminderQueue = new Queue('reminders', env.REDIS_URL, {
-  redis: {
-    tls: useTls ? { rejectUnauthorized: false } : undefined,
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-  },
-});
-
-reminderQueue.client.on('connect', () => console.log('[REDIS] Client connected'));
-reminderQueue.client.on('error', (err) => console.error('[REDIS] Client error:', err));
-reminderQueue.eclient.on('connect', () => console.log('[REDIS] Subscriber connected'));
-reminderQueue.eclient.on('error', (err) => console.error('[REDIS] Subscriber error:', err));
-
-/**
- * SchedulerService — Owns all time-math and job-queue interactions.
- *
- * Design invariants:
- *   1. All delay calculations happen here, never in the AI layer.
- *   2. Notification timings are in **minutes** (stored in Reminder.notificationTiming).
- *   3. User preference timings are in **hours** and are converted on read.
- */
 class SchedulerService {
   constructor() {
-    this._setupWorker();
-    this._startPeriodicCheck();
-    this._rehydrateOnDbConnect();
+    this._backfillOnDbConnect();
   }
 
   // -------------------------------------------------------------------------
@@ -56,248 +14,73 @@ class SchedulerService {
   // -------------------------------------------------------------------------
 
   /**
-   * Schedule Bull jobs for a reminder based on its notificationTiming array.
-   * Each entry produces one delayed job whose delay is computed deterministically:
-   *   `delay = deadline - offsetMinutes - now`
-   *
-   * @param {object} reminder - Mongoose Reminder document
-   * @param {object} user - Mongoose User document
-   * @returns {Promise<number>} Number of jobs successfully scheduled
-   */
-  async scheduleReminder(reminder, user) {
-    const deadlineMs = new Date(reminder.extracted.deadline).getTime();
-    const nowMs = Date.now();
-
-    if (!Number.isFinite(deadlineMs)) {
-      logger.error(`Invalid reminder deadline for ${reminder._id} — scheduling skipped`);
-      reminder.scheduledReminders = [];
-      await reminder.save();
-      return 0;
-    }
-
-    const timingsInMinutes = this._resolveTimings(reminder, user);
-    const normalizedTimings = [...new Set(
-      timingsInMinutes
-        .map((minutes) => Number(minutes))
-        .filter((minutes) => Number.isFinite(minutes) && minutes >= 0),
-    )].sort((a, b) => b - a);
-
-    // Clamp notification offsets so short-deadline reminders still fire.
-    // If all configured offsets are in the past relative to now+deadline,
-    // we fall back to a single 0-minute offset (at the deadline).
-    const minutesUntilDeadline = Math.max(0, Math.floor((deadlineMs - nowMs) / (60 * 1000)));
-    const futureTimings = normalizedTimings.filter((m) => m <= minutesUntilDeadline);
-    const effectiveTimings = futureTimings.length > 0 ? futureTimings : [0];
-
-    const scheduledReminders = [];
-
-    for (const minutes of effectiveTimings) {
-      const offsetMs = minutes * 60 * 1000;
-      const reminderTimeMs = deadlineMs - offsetMs;
-      const delayMs = reminderTimeMs - nowMs;
-
-      const reminderTime = new Date(reminderTimeMs);
-      const effectiveDelay = Math.max(0, delayMs);
-      await this._enqueueJob(reminder._id, scheduledReminders.length, effectiveDelay);
-      scheduledReminders.push({ scheduledFor: reminderTime, sent: false });
-      if (delayMs < 0) {
-        logger.info(`Reminder ${reminder._id} overdue by ${Math.abs(Math.round(delayMs / 60000))}m — firing immediately`);
-      } else {
-        logger.info(`Scheduled reminder for ${reminderTime.toISOString()} (${minutes}m notice)`);
-      }
-    }
-
-    reminder.scheduledReminders = scheduledReminders;
-    await reminder.save();
-
-    return scheduledReminders.length;
-  }
-
-  /**
-   * Remove queued jobs for a reminder where removal is supported by Bull.
+   * Remove the queued fire job for a reminder (called when user deletes).
+   * Uses the stored scheduledJobId for O(1) lookup; also tries the backfill prefix.
    * @param {string|import('mongoose').Types.ObjectId} reminderId
-   * @returns {Promise<number>}
+   * @returns {Promise<number>} number of jobs removed
    */
   async cancelReminderJobs(reminderId) {
-    const reminderIdStr = reminderId.toString();
+    const idStr = reminderId.toString();
     let removed = 0;
-    const jobs = await reminderQueue.getJobs(['waiting', 'delayed', 'paused']);
 
-    for (const job of jobs) {
-      if (job.data?.reminderId !== reminderIdStr) continue;
-      await job.remove();
-      removed += 1;
+    for (const jobId of [idStr, `backfill-${idStr}`]) {
+      const job = await reminderFireQueue.getJob(jobId);
+      if (job) {
+        await job.remove();
+        removed += 1;
+      }
     }
 
     return removed;
   }
 
-  // -------------------------------------------------------------------------
-  // Internal — Worker
-  // -------------------------------------------------------------------------
-
-  /** Configure Bull process handler and lifecycle events. */
-  _setupWorker() {
-    reminderQueue.process(async (job) => {
-      const { reminderId, scheduledReminderIndex } = job.data;
-
-      try {
-        const reminder = await Reminder.findById(reminderId);
-        if (!reminder || reminder.status === 'cancelled') {
-          logger.info(`Reminder ${reminderId} cancelled or not found`);
-          return;
-        }
-
-        const user = await User.findById(reminder.userId);
-        if (!user || !user.isActive) {
-          logger.info(`User not found or inactive for reminder ${reminderId}`);
-          return;
-        }
-
-        await notifierService.sendReminder(reminder, user);
-
-        // Mark specific scheduled slot as sent
-        if (reminder.scheduledReminders[scheduledReminderIndex]) {
-          reminder.scheduledReminders[scheduledReminderIndex].sent = true;
-          reminder.scheduledReminders[scheduledReminderIndex].sentAt = new Date();
-          reminder.status = 'sent';
-          await reminder.save();
-        }
-
-        logger.info(`Reminder sent: ${reminderId}`);
-      } catch (error) {
-        logger.error(`Error processing reminder ${reminderId}:`, error.message);
-        throw error; // let Bull retry
-      }
-    });
-
-    reminderQueue.on('completed', (job) => {
-      logger.info(`Job ${job.id} completed`);
-    });
-
-    reminderQueue.on('failed', (job, err) => {
-      logger.error(`Job ${job.id} failed:`, err.message);
-    });
+  async shutdown() {
+    await reminderFireQueue.close();
+    logger.info('Scheduler queue shut down cleanly');
   }
 
   // -------------------------------------------------------------------------
-  // Internal — Periodic rehydration
+  // Internal — startup backfill
   // -------------------------------------------------------------------------
 
-  /** Start an hourly sweep for "pending" reminders that have no scheduled jobs. */
-  _startPeriodicCheck() {
-    setInterval(() => {
-      this._checkAndScheduleReminders().catch(err => logger.error('Periodic check failed:', err));
-    }, PERIODIC_CHECK_INTERVAL_MS);
-
-    logger.info('⏰ Periodic scheduler started (runs every hour)');
-  }
-
-  /** On first DB connection, immediately rehydrate any missed jobs. */
-  _rehydrateOnDbConnect() {
+  _backfillOnDbConnect() {
     if (mongoose.connection.readyState === 1) {
-      this._checkAndScheduleReminders();
+      this._backfillOrphans();
     } else {
       mongoose.connection.once('connected', () => {
-        logger.info('Rehydrating jobs after DB connection');
-        this._checkAndScheduleReminders();
+        logger.info('Running reminder backfill after DB connection');
+        this._backfillOrphans();
       });
     }
   }
 
   /**
-   * Sweep for pending reminders with no scheduled jobs and schedule them.
-   * This is the resilience mechanism — if the server restarts, jobs are rebuilt.
+   * Atomically claim and re-enqueue any 'scheduled' reminders whose
+   * scheduledAt has already passed (missed delivery after a restart).
+   * Uses findOneAndUpdate to guarantee each reminder is claimed by at most
+   * one worker even when multiple instances race at startup.
    */
-  async _checkAndScheduleReminders() {
-    logger.info('Checking for unscheduled reminders...');
+  async _backfillOrphans() {
+    logger.info('Running reminder backfill sweep...');
+    let count = 0;
 
-    const now = new Date();
-    const reminders = await Reminder.find({
-      status: { $in: ['pending', 'active'] },
-      $or: [
-        // Never scheduled at all
-        { scheduledReminders: { $size: 0 } },
-        // Has unsent slots, but none are scheduled in the future (missed delivery)
-        {
-          $and: [
-            { scheduledReminders: { $elemMatch: { sent: false } } },
-            { scheduledReminders: { $not: { $elemMatch: { sent: false, scheduledFor: { $gt: now } } } } },
-          ],
-        },
-      ],
-      // Include reminders past deadline by up to 24h to catch missed deliveries
-      'extracted.deadline': { $gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
-    }).populate('userId');
+    while (true) {
+      const claimed = await Reminder.findOneAndUpdate(
+        { status: 'scheduled', scheduledAt: { $lte: new Date() } },
+        { $set: { status: 'firing', claimedAt: new Date() } },
+        { new: true, sort: { scheduledAt: 1 } },
+      );
+      if (!claimed) break;
 
-    // Fetch all jobs currently in the queue (waiting, delayed, or active) once
-    // so we can skip reminders that are already queued and avoid double-notifications
-    // on server restart.
-    let queuedReminderIds = new Set();
-    try {
-      const existingJobs = await reminderQueue.getJobs(['waiting', 'delayed', 'active']);
-      for (const job of existingJobs) {
-        if (job.data && job.data.reminderId) {
-          queuedReminderIds.add(job.data.reminderId);
-        }
-      }
-    } catch (error) {
-      logger.error('Could not fetch existing queue jobs for deduplication:', error.message);
-      // Proceed without deduplication rather than skipping rehydration entirely
+      await reminderFireQueue.add(
+        'fire',
+        { reminderId: claimed._id.toString() },
+        { jobId: `backfill-${claimed._id}` },
+      );
+      count += 1;
     }
 
-    for (const reminder of reminders) {
-      try {
-        if (!reminder.userId) continue;
-
-        if (queuedReminderIds.has(reminder._id.toString())) {
-          logger.info(`Reminder ${reminder._id} already queued — skipping rehydration`);
-          continue;
-        }
-
-        await this.scheduleReminder(reminder, reminder.userId);
-      } catch (error) {
-        logger.error(`Error scheduling reminder ${reminder._id}:`, error.message);
-      }
-    }
-
-    logger.info(`Rehydration complete — processed ${reminders.length} reminders`);
-  }
-
-  // -------------------------------------------------------------------------
-  // Internal — Helpers
-  // -------------------------------------------------------------------------
-
-  /**
-   * Resolve the notification timings for a reminder (in minutes).
-   * Priority: reminder-specific → user preferences (converted from hours).
-   * @param {object} reminder
-   * @param {object} user
-   * @returns {number[]}
-   */
-  _resolveTimings(reminder, user) {
-    if (reminder.notificationTiming && reminder.notificationTiming.length > 0) {
-      return reminder.notificationTiming;
-    }
-    const userTimings = user.preferences?.reminderTiming || [24, 1];
-    return userTimings.map((h) => h * 60);
-  }
-
-  /**
-   * Add a job to the Bull queue with standard retry settings.
-   * @param {string} reminderId
-   * @param {number} index - scheduledReminderIndex
-   * @param {number} delay - delay in ms
-   */
-  async _enqueueJob(reminderId, index, delay) {
-    await reminderQueue.add(
-      { reminderId: reminderId.toString(), scheduledReminderIndex: index },
-      {
-        delay,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: MAX_BACKOFF_DELAY_MS },
-      },
-    );
+    logger.info(`Backfill complete — re-enqueued ${count} orphaned reminder(s)`);
   }
 }
 

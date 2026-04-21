@@ -12,7 +12,7 @@ class MessagingProvider {
    * @param {string} message - Plain-text message body
    * @returns {Promise<{success: boolean, error?: string}>}
    */
-  async send(to, message) {
+  async send(to, message, options = {}) {
     throw new Error('MessagingProvider.send() must be implemented by subclass');
   }
 
