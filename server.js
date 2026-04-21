@@ -42,10 +42,8 @@ const startServer = async () => {
     notifierService.registerAdapter('telegram', telegram);
 
     // 3. Telegram webhook route — outside /api entirely, telegramAuth cannot apply
-    app.post('/webhook/telegram', (req, res) => {
-      res.sendStatus(200); // Acknowledge immediately so Telegram doesn't retry
-      telegram.processUpdate(req.body);
-    });
+    //    Persist → enqueue → 200 (in that order) so crashes leave updates retryable.
+    app.post('/webhook/telegram', (req, res) => webhookController.handleTelegramWebhook(req, res));
 
     // 4. API routes (telegramAuth applies here but not to the webhook above)
     app.use('/api', require('./src/routes/api.routes'));
@@ -86,6 +84,7 @@ process.on('unhandledRejection', (err) => {
 const gracefulShutdown = async (signal) => {
   logger.info(`Received ${signal}. Shutting down gracefully...`);
   try {
+    await webhookController.shutdownQueue();
     await schedulerService.shutdown();
     await notifierService.shutdown();
     await new Promise((resolve, reject) => {
