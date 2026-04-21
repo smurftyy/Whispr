@@ -115,10 +115,11 @@ class WebhookController {
   _setupQueueWorker() {
     messageQueue.process('message_received', async (job) => {
       const { messageId } = job.data;
+      const jobLog = logger.child({ worker: 'message', messageId });
 
       const message = await Message.findOne({ messageId });
       if (!message) {
-        logger.error(`Message document not found for update ${messageId} — skipping`);
+        jobLog.error('Message document not found for update — skipping');
         return;
       }
 
@@ -144,7 +145,7 @@ class WebhookController {
           await Event.create({
             type: 'InvalidAIOutputEvent',
             payload: { messageId, platformId, issues: err.issues },
-          }).catch((e) => logger.error('Failed to emit InvalidAIOutputEvent:', e.message));
+          }).catch((e) => jobLog.error({ err: e }, 'Failed to emit InvalidAIOutputEvent'));
           try {
             await notifierService.send(
               platformId,
@@ -152,7 +153,7 @@ class WebhookController {
               'telegram',
             );
           } catch (notifyErr) {
-            logger.error('Failed to notify user of invalid AI output:', notifyErr.message);
+            jobLog.error({ err: notifyErr }, 'Failed to notify user of invalid AI output');
           }
           return; // no throw → no Bull retry
         }
@@ -163,7 +164,7 @@ class WebhookController {
     });
 
     messageQueue.on('failed', (job, err) => {
-      logger.error(`Message job ${job.id} failed:`, err.message);
+      logger.error({ jobId: job.id, err }, 'Message job failed');
     });
   }
 

@@ -32,11 +32,11 @@ const startServer = async () => {
     await telegram.start(webhookUrl);
     await telegram.configureMiniApp(env.MINI_APP_URL);
     telegram.onMessage(async (from, body, messageId) => {
-      logger.info(`Received message from ${from}: ${body}`);
+      logger.info({ from, messageId }, 'Message received');
       try {
         await webhookController.processMessage(from, body, messageId);
       } catch (error) {
-        logger.error('Error processing message:', error.message);
+        logger.error({ from, messageId, err: error }, 'Error processing message');
       }
     });
     notifierService.registerAdapter('telegram', telegram);
@@ -77,7 +77,8 @@ startServer().then((server) => {
 // ---------------------------------------------------------------------------
 
 process.on('unhandledRejection', (err) => {
-  logger.error('Unhandled Rejection:', err);
+  logger.error({ err }, 'Unhandled Rejection');
+  console.error('Unhandled Rejection (last-resort):', err); // fallback if pino transport fails
   process.exit(1);
 });
 

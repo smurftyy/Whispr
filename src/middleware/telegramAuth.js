@@ -1,8 +1,14 @@
 const crypto = require('crypto');
 const env = require('../config/env');
 const User = require('../models/User');
+const { createRedisClient } = require('../config/redis');
 
-const MAX_INIT_DATA_AGE_SECONDS = 24 * 60 * 60;
+// Tightened to match nonce TTL — tokens older than this cannot be replayed
+// even after their nonce key expires from Redis.
+const MAX_INIT_DATA_AGE_SECONDS = 10 * 60; // 10 minutes
+const NONCE_TTL_SECONDS = 600;
+
+const redisClient = createRedisClient(env.REDIS_URL);
 
 const UNAUTHORIZED = { error: 'Unauthorized', code: 'UNAUTHORIZED' };
 
@@ -68,6 +74,18 @@ async function telegramAuth(req, res, next) {
   const expectedHash = computeHash(env.TELEGRAM_BOT_TOKEN, buildDataCheckString(params));
   if (expectedHash !== hash) {
     return res.status(401).json(UNAUTHORIZED);
+  }
+
+  // Nonce check — sha256 of the raw initData string is stable and unpredictable
+  const nonce = crypto.createHash('sha256').update(initData).digest('hex');
+  try {
+    const ok = await redisClient.set(`tg:nonce:${nonce}`, '1', 'EX', NONCE_TTL_SECONDS, 'NX');
+    if (!ok) {
+      return res.status(401).json({ error: 'replay_detected' });
+    }
+  } catch {
+    // Fail closed — a Redis outage must not open the gate
+    return res.status(503).json({ error: 'service_unavailable' });
   }
 
   const platformId = telegramUser.id.toString();

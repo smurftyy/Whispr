@@ -141,6 +141,7 @@ const _instance = new NotifierService();
  */
 async function processReminderFire(job) {
   const { reminderId } = job.data;
+  const jobLog = logger.child({ worker: 'reminder_fire', reminderId });
 
   const reminder = await Reminder.findOneAndUpdate(
     { _id: reminderId, status: { $in: ['scheduled', 'firing'] } },
@@ -149,20 +150,21 @@ async function processReminderFire(job) {
   );
 
   if (!reminder) {
-    logger.info(`Reminder ${reminderId} already fired or not found — skipping`);
+    jobLog.info('Reminder already fired or not found — skipping');
     return;
   }
 
   const user = await User.findById(reminder.userId);
   if (!user || !user.isActive) {
     await transitionReminder(reminder._id, 'failed', { failureReason: 'User not found or inactive' });
-    logger.warn(`Reminder ${reminderId} failed: user unavailable`);
+    jobLog.warn('Reminder failed: user unavailable');
     return;
   }
 
   await _instance.sendReminder(reminder, user);
 
   await transitionReminder(reminder._id, 'fired', { firedAt: new Date() });
+  jobLog.info('Reminder fired successfully');
 }
 
 module.exports = _instance;

@@ -1,16 +1,17 @@
+// src/utils/logger.js — Pino structured logger singleton
+const pino = require('pino');
+const env = require('../config/env');
 
-// src/utils/logger.js - Simple Logger
-const logger = {
-  info: (...args) => {
-    console.log(`[INFO] [${new Date().toISOString()}]`, ...args);
-  },
-  error: (...args) => {
-    console.error(`[ERROR] [${new Date().toISOString()}]`, ...args);
-  },
-  warn: (...args) => {
-    console.warn(`[WARN] [${new Date().toISOString()}]`, ...args);
-  },
-  debug: () => {},
-};
+const logger = pino(
+  env.NODE_ENV === 'development'
+    ? {
+        level: 'debug',
+        transport: {
+          target: 'pino-pretty',
+          options: { colorize: true, translateTime: 'SYS:standard', ignore: 'pid,hostname' },
+        },
+      }
+    : { level: 'info' },
+);
 
 module.exports = logger;
