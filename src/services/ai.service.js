@@ -2,6 +2,8 @@
 const chrono = require('chrono-node');
 const env = require('../config/env');
 const logger = require('../utils/logger');
+const { AIOutputSchema } = require('../schemas/ai.schema');
+const { InvalidAIOutputError } = require('../lib/errors');
 
 // ─── CLAUDE SWAP ────────────────────────────────────────────────────────────
 // The claudeExtract method below uses fetch directly (no SDK required).
@@ -53,18 +55,23 @@ class AIService {
       throw new Error(`Input too long: ${messageText.length} characters (max 500)`);
     }
 
-    if (env.AI_PROVIDER === 'claude' && env.ANTHROPIC_API_KEY) {
-      return this.claudeExtract(messageText);
+    const rawIntent = (env.AI_PROVIDER === 'claude' && env.ANTHROPIC_API_KEY)
+      ? await this.claudeExtract(messageText)
+      : this.ruleExtract(messageText);
+
+    const parsed = AIOutputSchema.safeParse(rawIntent);
+    if (!parsed.success) {
+      logger.error('[ai.service] intent failed schema:', parsed.error.issues, rawIntent);
+      throw new InvalidAIOutputError(parsed.error.issues);
     }
-    return this.ruleExtract(messageText);
+    return parsed.data;
   }
 
   ruleExtract(text) {
     const parsed = chrono.parse(text, new Date(), { forwardDate: true });
     if (!parsed.length) {
-      const err = new Error('NO_DEADLINE');
-      err.code = 'NO_DEADLINE';
-      throw err;
+      // Null parse → unrecognized intent; validated by AIOutputSchema at the exit point
+      return { intent: 'unrecognized', raw: text };
     }
     const eventTime = parsed[0].start.date();
 
@@ -100,9 +107,14 @@ class AIService {
       'personal';
 
     return {
+      intent: 'create_reminder',
+      title: task,
+      scheduledAt: eventTime, // Date — Zod transforms to Date; also kept in eventTime below
+      notes: null,
+      recurrence,
+      // Legacy fields — preserved via .passthrough() on ReminderIntentSchema
       task,
       eventTime: eventTime.toISOString(),
-      recurrence,
       urgency,
       suggestedNotificationStrategy: '1_hour_before',
       type,
@@ -180,7 +192,17 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
       }
 
       logger.info('Claude extraction successful:', JSON.stringify(extracted));
-      return extracted;
+      // Map to the unified intent shape (legacy fields preserved for compat)
+      return {
+        intent: extracted.eventTime ? 'create_reminder' : 'unrecognized',
+        title: extracted.task || 'Untitled reminder',
+        scheduledAt: extracted.eventTime || null,
+        notes: null,
+        recurrence: extracted.recurrence || 'none',
+        raw: extracted.eventTime ? undefined : messageText,
+        // Legacy fields
+        ...extracted,
+      };
     } catch {
       throw new Error('EXTRACTION_FAILED');
     }

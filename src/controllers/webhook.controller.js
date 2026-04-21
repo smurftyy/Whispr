@@ -2,9 +2,11 @@
 const Queue = require('bull');
 const User = require('../models/User');
 const Message = require('../models/Message');
+const Event = require('../models/Event');
 const env = require('../config/env');
 const notifierService = require('../services/notifier.service');
 const reminderService = require('../services/reminder.service');
+const { InvalidAIOutputError } = require('../lib/errors');
 const logger = require('../utils/logger');
 
 // ---------------------------------------------------------------------------
@@ -128,15 +130,32 @@ class WebhookController {
         return;
       }
 
+      const platformId = msg.from.id.toString();
       try {
-        await this.processMessage(
-          msg.from.id.toString(),
-          msg.text,
-          msg.message_id?.toString(),
-        );
+        await this.processMessage(platformId, msg.text, msg.message_id?.toString());
         message.status = 'parsed';
         await message.save();
       } catch (err) {
+        if (err instanceof InvalidAIOutputError) {
+          // Schema failures won't self-heal on retry — mark failed and give user feedback
+          message.status = 'failed';
+          message.failureReason = err.message;
+          await message.save();
+          await Event.create({
+            type: 'InvalidAIOutputEvent',
+            payload: { messageId, platformId, issues: err.issues },
+          }).catch((e) => logger.error('Failed to emit InvalidAIOutputEvent:', e.message));
+          try {
+            await notifierService.send(
+              platformId,
+              "Sorry, I couldn't understand that reminder. Try rephrasing with a clearer time.",
+              'telegram',
+            );
+          } catch (notifyErr) {
+            logger.error('Failed to notify user of invalid AI output:', notifyErr.message);
+          }
+          return; // no throw → no Bull retry
+        }
         message.status = 'failed';
         await message.save();
         throw err; // surface to Bull so it retries

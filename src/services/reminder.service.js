@@ -5,6 +5,7 @@ const User = require('../models/User');
 const aiService = require('./ai.service');
 const schedulerService = require('./scheduler.service');
 const reminderFireQueue = require('../queues/reminder.queue');
+const { InvalidAIOutputError } = require('../lib/errors');
 const logger = require('../utils/logger');
 const {
   CONVERSATION_STATES,
@@ -47,6 +48,8 @@ class ReminderService {
     try {
       extracted = await aiService.extractReminder(messageText);
     } catch (error) {
+      // InvalidAIOutputError must reach the Bull worker for no-retry handling
+      if (error instanceof InvalidAIOutputError) throw error;
       logger.error(`AI extraction failed for ${platform}:${platformId}:`, error.message);
       const wrapped = new Error(`AI extraction failed: ${error.message}`);
       wrapped.code = 'AI_EXTRACTION_FAILED';

@@ -31,7 +31,8 @@
     "express": "^5.2.1",
     "ioredis": "^5.0.0",
     "mongoose": "^9.0.2",
-    "node-telegram-bot-api": "^0.67.0"
+    "node-telegram-bot-api": "^0.67.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "eslint": "^9.39.2",
