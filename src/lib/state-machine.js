@@ -1,14 +1,17 @@
 // src/lib/state-machine.js — Reminder lifecycle state machine
+const { REMINDER_STATUS } = require('../constants');
+
+const { PENDING, PARSED, SCHEDULED, FIRING, FIRED, COMPLETED, FAILED, CANCELLED } = REMINDER_STATUS;
 
 const REMINDER_TRANSITIONS = {
-  pending:   ['parsed', 'failed', 'cancelled'],
-  parsed:    ['scheduled', 'failed', 'cancelled'],
-  scheduled: ['firing', 'failed', 'completed', 'cancelled'],
-  firing:    ['fired', 'failed'],
-  fired:     ['completed'],
-  completed: [],
-  failed:    [],
-  cancelled: [],
+  [PENDING]:   [PARSED, FAILED, CANCELLED],
+  [PARSED]:    [SCHEDULED, FAILED, CANCELLED],
+  [SCHEDULED]: [FIRING, FAILED, COMPLETED, CANCELLED],
+  [FIRING]:    [FIRED, FAILED],
+  [FIRED]:     [COMPLETED],
+  [COMPLETED]: [],
+  [FAILED]:    [],
+  [CANCELLED]: [],
 };
 
 function canTransition(from, to) {
@@ -46,4 +49,4 @@ async function transitionReminder(reminderId, targetStatus, patch = {}) {
   return updated;
 }
 
-module.exports = { canTransition, IllegalTransitionError, REMINDER_TRANSITIONS, transitionReminder };
+module.exports = { canTransition, IllegalTransitionError, REMINDER_TRANSITIONS, transitionReminder, REMINDER_STATUS };

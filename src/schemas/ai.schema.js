@@ -1,5 +1,6 @@
 // src/schemas/ai.schema.js — Zod validation for AI service output
 const { z } = require('zod');
+const { REMINDER_FREQUENCY } = require('../constants');
 
 const ReminderIntentSchema = z.object({
   intent: z.literal('create_reminder'),
@@ -10,7 +11,7 @@ const ReminderIntentSchema = z.object({
     z.date(),
   ]).transform((v) => new Date(v)),
   notes: z.string().max(2000).optional().nullable(),
-  recurrence: z.enum(['none', 'daily', 'weekly', 'monthly']).default('none'),
+  recurrence: z.enum(Object.values(REMINDER_FREQUENCY)).default(REMINDER_FREQUENCY.NONE),
 }).passthrough(); // preserve legacy fields (task, eventTime, urgency, etc.) during migration
 
 const JournalIntentSchema = z.object({

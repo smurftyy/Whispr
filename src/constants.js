@@ -46,9 +46,9 @@ const REMINDER_STATUS = {
 
 const REMINDER_FREQUENCY = {
   NONE: 'none',
-  ONCE: 'none', // Alias for backward compatibility
   DAILY: 'daily',
   WEEKLY: 'weekly',
+  MONTHLY: 'monthly',
 };
 
 const REMINDER_URGENCY = {

@@ -10,6 +10,8 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../src/models/User');
 const Reminder = require('../src/models/Reminder');
+const Event = require('../src/models/Event');
+const Message = require('../src/models/Message');
 
 async function run() {
   await mongoose.connect(process.env.MONGODB_URI);
@@ -34,6 +36,12 @@ async function run() {
 
   await Reminder.syncIndexes();
   console.log('Reminder indexes synced');
+
+  await Event.syncIndexes();
+  console.log('Event indexes synced');
+
+  await Message.syncIndexes();
+  console.log('Message indexes synced');
 
   // Log final index state for verification
   const finalUserIndexes = await userCollection.indexes();

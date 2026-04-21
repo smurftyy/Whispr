@@ -61,8 +61,15 @@ class AIService {
 
     const parsed = AIOutputSchema.safeParse(rawIntent);
     if (!parsed.success) {
-      logger.error('[ai.service] intent failed schema:', parsed.error.issues, rawIntent);
+      logger.error({ issues: parsed.error.issues }, 'AI output failed schema validation');
       throw new InvalidAIOutputError(parsed.error.issues);
+    }
+
+    if (parsed.data.intent === 'journal_entry') {
+      return { ...parsed.data, _routed: 'journal' };
+    }
+    if (parsed.data.intent === 'unrecognized') {
+      throw new InvalidAIOutputError([{ message: 'Unrecognized intent', input: parsed.data.raw }]);
     }
     return parsed.data;
   }
@@ -191,7 +198,10 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
         this._recoverEventTimeWithChrono(extracted, messageText, now);
       }
 
-      logger.info('Claude extraction successful:', JSON.stringify(extracted));
+      logger.info(
+        { intent: extracted?.intent, hasEventTime: !!extracted?.eventTime },
+        'Claude extraction successful',
+      );
       // Map to the unified intent shape (legacy fields preserved for compat)
       return {
         intent: extracted.eventTime ? 'create_reminder' : 'unrecognized',
@@ -253,23 +263,6 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
     }
   }
 
-  /**
-   * Pure-local fallback using chrono-node when no AI provider is available.
-   * @param {string} messageText
-   * @param {Date} now
-   * @returns {{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string}}
-   */
-  _fallbackExtraction(messageText, now) {
-    const parsed = chrono.parseDate(messageText, now, { forwardDate: true });
-    return {
-      task: messageText.substring(0, 50),
-      eventTime: parsed ? parsed.toISOString() : null,
-      recurrence: 'none',
-      urgency: 'medium',
-      suggestedNotificationStrategy: '30_minutes_before',
-      type: 'other',
-    };
-  }
 }
 
 module.exports = new AIService();

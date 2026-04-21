@@ -56,10 +56,21 @@ class ReminderService {
       throw wrapped;
     }
 
+    if (extracted._routed === 'journal') {
+      logger.info({ platform, platformId }, 'Journal entry received — not yet persisted (stub)');
+      const err = new Error('Journal entries are not yet supported');
+      err.code = 'JOURNAL_ENTRY';
+      throw err;
+    }
+
     return this.createFromExtracted(user, extracted, messageText);
   }
 
   async createFromExtracted(userOrId, extractedInput, originalMessage = '') {
+    if (extractedInput.intent !== 'create_reminder') {
+      throw new Error(`createFromExtracted called with non-reminder intent: ${extractedInput.intent}`);
+    }
+
     const user = typeof userOrId === 'object' && userOrId?._id
       ? userOrId
       : await User.findById(userOrId);
@@ -117,8 +128,7 @@ class ReminderService {
       logger.error(`Scheduling failed for reminder ${reminder._id}:`, error.message);
     }
 
-    reminder.schedulingFailed = schedulingFailed;
-    return { reminder, extracted };
+    return { reminder, extracted, schedulingFailed };
   }
 
   async listForUser(userId) {

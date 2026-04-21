@@ -5,6 +5,7 @@ const aiService = require('../services/ai.service');
 const Reminder = require('../models/Reminder');
 const { REMINDER_STATUS } = require('../constants');
 const { transitionReminder, IllegalTransitionError } = require('../lib/state-machine');
+const { ReminderIntentSchema } = require('../schemas/ai.schema');
 const logger = require('../utils/logger');
 
 class ApiController {
@@ -47,7 +48,14 @@ class ApiController {
           text.trim(),
         );
       } else if (extracted && typeof extracted === 'object') {
-        result = await reminderService.createFromExtracted(req.user, extracted, text || extracted.task || '');
+        const parseResult = ReminderIntentSchema.safeParse(extracted);
+        if (!parseResult.success) {
+          return res.status(400).json({
+            error: 'invalid_reminder_intent',
+            issues: parseResult.error.issues,
+          });
+        }
+        result = await reminderService.createFromExtracted(req.user, parseResult.data, text || parseResult.data.task || '');
       } else {
         return res.status(400).json({ error: 'Request body must include text or extracted' });
       }

@@ -256,9 +256,9 @@ class WebhookController {
 
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
-    let extracted, reminder;
+    let extracted, reminder, schedulingFailed;
     try {
-      ({ reminder, extracted } = await reminderService.createFromText(
+      ({ reminder, extracted, schedulingFailed } = await reminderService.createFromText(
         user._id,
         platformId,
         platform,
@@ -270,6 +270,10 @@ class WebhookController {
       }
       if (error.code === 'AI_EXTRACTION_FAILED') {
         return notifierService.send(platformId, MESSAGES.ERROR_AI_UNAVAILABLE, platform);
+      }
+      if (error.code === 'JOURNAL_ENTRY') {
+        logger.info({ platformId }, 'Journal entry received — not yet supported, silently acknowledged');
+        return;
       }
 
       logger.error('Reminder creation failed:', error.message);
@@ -301,7 +305,7 @@ class WebhookController {
       ? 'at the due time'
       : (STRATEGY_LABELS[strategy] || '1 hour before');
 
-    const summary = reminder.schedulingFailed
+    const summary = schedulingFailed
       ? `Reminder set! :)\n\n` +
         `Task: ${extracted.task}\n` +
         `Due: ${timeStr}\n\n` +
