@@ -262,7 +262,7 @@ Register the Mini App URL with BotFather via `/newapp` (or `/editapp`) so Telegr
 
 ## 👥 Credits
 
-Built by **snurftyy** (backend) and **Daniel** (frontend) for the **Claude Hackathon**.
+Built by **smurftyy** (backend) and **Daniel** (frontend) for the **Claude Hackathon**.
 
 Design system: *The Nocturnal Editorial* — see [`DESIGN.md`](./DESIGN.md).
 
