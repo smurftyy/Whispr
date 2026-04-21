@@ -2,6 +2,7 @@
 const Reminder = require('../models/Reminder');
 const User = require('../models/User');
 const logger = require('../utils/logger');
+const { transitionReminder } = require('../lib/state-machine');
 
 /**
  * NotifierService acts as a message router.  Adapters are registered at boot
@@ -154,18 +155,14 @@ async function processReminderFire(job) {
 
   const user = await User.findById(reminder.userId);
   if (!user || !user.isActive) {
-    reminder.status = 'failed';
-    reminder.failureReason = 'User not found or inactive';
-    await reminder.save();
+    await transitionReminder(reminder._id, 'failed', { failureReason: 'User not found or inactive' });
     logger.warn(`Reminder ${reminderId} failed: user unavailable`);
     return;
   }
 
   await _instance.sendReminder(reminder, user);
 
-  reminder.status = 'fired';
-  reminder.firedAt = new Date();
-  await reminder.save();
+  await transitionReminder(reminder._id, 'fired', { firedAt: new Date() });
 }
 
 module.exports = _instance;

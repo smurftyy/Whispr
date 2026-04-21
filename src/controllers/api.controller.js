@@ -4,6 +4,7 @@ const schedulerService = require('../services/scheduler.service');
 const aiService = require('../services/ai.service');
 const Reminder = require('../models/Reminder');
 const { REMINDER_STATUS } = require('../constants');
+const { transitionReminder, IllegalTransitionError } = require('../lib/state-machine');
 const logger = require('../utils/logger');
 
 class ApiController {
@@ -75,7 +76,15 @@ class ApiController {
       if (!reminder) {
         const candidates = await Reminder.find({
           userId: req.user._id,
-          status: { $in: [REMINDER_STATUS.PENDING, REMINDER_STATUS.ACTIVE] },
+          status: {
+            $in: [
+              REMINDER_STATUS.SCHEDULED,
+              REMINDER_STATUS.FIRED,
+              // legacy statuses for existing documents
+              REMINDER_STATUS.PENDING,
+              REMINDER_STATUS.ACTIVE,
+            ],
+          },
         });
         reminder = candidates.find((r) => r._id.toString().endsWith(req.params.id)) || null;
       }
@@ -84,11 +93,14 @@ class ApiController {
         return res.status(404).json({ error: 'Reminder not found', code: 'NOT_FOUND' });
       }
 
-      reminder.status = REMINDER_STATUS.COMPLETED;
-      await Reminder.updateOne(
-        { _id: reminder._id },
-        { $set: { status: REMINDER_STATUS.COMPLETED } },
-      );
+      try {
+        reminder = await transitionReminder(reminder._id, REMINDER_STATUS.COMPLETED);
+      } catch (err) {
+        if (err instanceof IllegalTransitionError) {
+          return res.status(409).json({ error: err.message, code: err.code });
+        }
+        throw err;
+      }
 
       try {
         await schedulerService.cancelReminderJobs(reminder._id.toString());
@@ -110,6 +122,9 @@ class ApiController {
     } catch (error) {
       if (error.code === 'NOT_FOUND') {
         return res.status(404).json({ error: 'Reminder not found', code: 'NOT_FOUND' });
+      }
+      if (error.code === 'ILLEGAL_TRANSITION') {
+        return res.status(409).json({ error: error.message, code: error.code });
       }
       logger.error('API delete reminder error:', error.message);
       return res.status(500).json({ error: 'Failed to delete reminder' });

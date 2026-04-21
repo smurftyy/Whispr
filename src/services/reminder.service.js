@@ -13,7 +13,7 @@ const {
   REMINDER_STATUS,
   REMINDER_TYPE,
 } = require('../constants');
-const { canTransition, IllegalTransitionError } = require('../lib/state-machine');
+const { transitionReminder } = require('../lib/state-machine');
 
 const STRATEGY_TIMING_MAP = {
   [NOTIFICATION_STRATEGIES.IMMEDIATE]: [0],
@@ -21,25 +21,6 @@ const STRATEGY_TIMING_MAP = {
   [NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE]: [60],
   [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]: [1440],
 };
-
-/**
- * Canonical transition helper. Reads current status, validates the transition,
- * then applies it with a CAS guard to prevent lost-update races.
- */
-async function transitionReminder(reminderId, targetStatus, patch = {}) {
-  const reminder = await Reminder.findById(reminderId);
-  if (!reminder) throw new Error('Reminder not found');
-  if (!canTransition(reminder.status, targetStatus)) {
-    throw new IllegalTransitionError(reminder.status, targetStatus);
-  }
-  const updated = await Reminder.findOneAndUpdate(
-    { _id: reminderId, status: reminder.status }, // CAS guard — prevents lost-update races
-    { $set: { status: targetStatus, ...patch } },
-    { new: true },
-  );
-  if (!updated) throw new IllegalTransitionError(reminder.status, targetStatus);
-  return updated;
-}
 
 function normalizeExtracted(extracted) {
   return {
@@ -125,9 +106,9 @@ class ReminderService {
         { reminderId: reminder._id.toString() },
         { jobId: reminder._id.toString(), delay },
       );
-      await transitionReminder(reminder._id, REMINDER_STATUS.SCHEDULED, { scheduledJobId: job.id });
-      reminder.status = REMINDER_STATUS.SCHEDULED;
-      reminder.scheduledJobId = job.id;
+      const scheduled = await transitionReminder(reminder._id, REMINDER_STATUS.SCHEDULED, { scheduledJobId: job.id });
+      reminder.status = scheduled.status;
+      reminder.scheduledJobId = scheduled.scheduledJobId;
     } catch (error) {
       schedulingFailed = true;
       logger.error(`Scheduling failed for reminder ${reminder._id}:`, error.message);
