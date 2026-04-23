@@ -87,7 +87,7 @@ class AIService {
     }
     const eventTime = parsed[0].start.date();
 
-    const cleaned = text
+    const cleaned = normalized
       .replace(parsed[0].text, '')
       // Strip common opener phrases
       .replace(/^(hey,?\s*)?(please\s*)?(can you\s*)?remind me( to| that| about)?/i, '')
