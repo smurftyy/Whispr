@@ -1,7 +1,9 @@
 // src/app.js - Express Application
 const express = require('express');
+const pinoHttp = require('pino-http');
 const env = require('./config/env');
 const logger = require('./utils/logger');
+const requestId = require('./middleware/requestId');
 const miniAppCors = require('./middleware/cors');
 
 const app = express();
@@ -9,12 +11,8 @@ const app = express();
 // Middleware
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-
-// Request logging
-app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path}`);
-  next();
-});
+app.use(requestId);
+app.use(pinoHttp({ logger, genReqId: (req) => req.id }));
 
 app.use(miniAppCors);
 

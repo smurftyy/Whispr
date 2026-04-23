@@ -17,6 +17,10 @@ const messageSchema = new mongoose.Schema(
       enum: ['received', 'parsed', 'failed'],
       default: 'received',
     },
+    failureReason: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true },
 );

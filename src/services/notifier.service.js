@@ -2,7 +2,7 @@
 const Reminder = require('../models/Reminder');
 const User = require('../models/User');
 const logger = require('../utils/logger');
-const { transitionReminder } = require('../lib/state-machine');
+const { transitionReminder, REMINDER_STATUS } = require('../lib/state-machine');
 
 /**
  * NotifierService acts as a message router.  Adapters are registered at boot
@@ -65,7 +65,6 @@ class NotifierService {
     });
 
     const displayName = user.name || 'there';
-    const task = reminder.extracted.task;
     const friendlyAction = this._buildFriendlyAction(reminder, user);
     const friendlyNote = this._buildFriendlyNote(user);
 
@@ -141,28 +140,37 @@ const _instance = new NotifierService();
  */
 async function processReminderFire(job) {
   const { reminderId } = job.data;
+  const jobLog = logger.child({ worker: 'reminder_fire', reminderId });
 
   const reminder = await Reminder.findOneAndUpdate(
-    { _id: reminderId, status: { $in: ['scheduled', 'firing'] } },
-    { $set: { status: 'firing', claimedAt: new Date() } },
+    { _id: reminderId, status: { $in: [REMINDER_STATUS.SCHEDULED, REMINDER_STATUS.FIRING] } },
+    { $set: { status: REMINDER_STATUS.FIRING, claimedAt: new Date() } },
     { new: true },
   );
 
   if (!reminder) {
-    logger.info(`Reminder ${reminderId} already fired or not found — skipping`);
+    jobLog.info('Reminder already fired or not found — skipping');
     return;
   }
 
   const user = await User.findById(reminder.userId);
   if (!user || !user.isActive) {
-    await transitionReminder(reminder._id, 'failed', { failureReason: 'User not found or inactive' });
-    logger.warn(`Reminder ${reminderId} failed: user unavailable`);
+    await transitionReminder(reminder._id, REMINDER_STATUS.FAILED, { failureReason: 'User not found or inactive' });
+    jobLog.warn('Reminder failed: user unavailable');
     return;
   }
 
-  await _instance.sendReminder(reminder, user);
-
-  await transitionReminder(reminder._id, 'fired', { firedAt: new Date() });
+  try {
+    await _instance.sendReminder(reminder, user);
+    await transitionReminder(reminder._id, REMINDER_STATUS.FIRED, { firedAt: new Date() });
+    jobLog.info('Reminder fired successfully');
+  } catch (err) {
+    logger.error({ err, reminderId }, 'Reminder fire failed');
+    await Reminder.findByIdAndUpdate(reminderId, {
+      $set: { failureReason: err.message },
+    }).catch(() => {});
+    throw err;
+  }
 }
 
 module.exports = _instance;

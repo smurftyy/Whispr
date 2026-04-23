@@ -2,9 +2,11 @@
 const Queue = require('bull');
 const User = require('../models/User');
 const Message = require('../models/Message');
+const Event = require('../models/Event');
 const env = require('../config/env');
 const notifierService = require('../services/notifier.service');
 const reminderService = require('../services/reminder.service');
+const { InvalidAIOutputError } = require('../lib/errors');
 const logger = require('../utils/logger');
 
 // ---------------------------------------------------------------------------
@@ -113,10 +115,11 @@ class WebhookController {
   _setupQueueWorker() {
     messageQueue.process('message_received', async (job) => {
       const { messageId } = job.data;
+      const jobLog = logger.child({ worker: 'message', messageId });
 
       const message = await Message.findOne({ messageId });
       if (!message) {
-        logger.error(`Message document not found for update ${messageId} — skipping`);
+        jobLog.error('Message document not found for update — skipping');
         return;
       }
 
@@ -128,15 +131,32 @@ class WebhookController {
         return;
       }
 
+      const platformId = msg.from.id.toString();
       try {
-        await this.processMessage(
-          msg.from.id.toString(),
-          msg.text,
-          msg.message_id?.toString(),
-        );
+        await this.processMessage(platformId, msg.text, msg.message_id?.toString());
         message.status = 'parsed';
         await message.save();
       } catch (err) {
+        if (err instanceof InvalidAIOutputError) {
+          // Schema failures won't self-heal on retry — mark failed and give user feedback
+          message.status = 'failed';
+          message.failureReason = err.message;
+          await message.save();
+          await Event.create({
+            type: 'InvalidAIOutputEvent',
+            payload: { messageId, platformId, issues: err.issues },
+          }).catch((e) => jobLog.error({ err: e }, 'Failed to emit InvalidAIOutputEvent'));
+          try {
+            await notifierService.send(
+              platformId,
+              "Sorry, I couldn't understand that reminder. Try rephrasing with a clearer time.",
+              'telegram',
+            );
+          } catch (notifyErr) {
+            jobLog.error({ err: notifyErr }, 'Failed to notify user of invalid AI output');
+          }
+          return; // no throw → no Bull retry
+        }
         message.status = 'failed';
         await message.save();
         throw err; // surface to Bull so it retries
@@ -144,7 +164,7 @@ class WebhookController {
     });
 
     messageQueue.on('failed', (job, err) => {
-      logger.error(`Message job ${job.id} failed:`, err.message);
+      logger.error({ jobId: job.id, err }, 'Message job failed');
     });
   }
 
@@ -236,9 +256,9 @@ class WebhookController {
 
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
-    let extracted, reminder;
+    let extracted, reminder, schedulingFailed;
     try {
-      ({ reminder, extracted } = await reminderService.createFromText(
+      ({ reminder, extracted, schedulingFailed } = await reminderService.createFromText(
         user._id,
         platformId,
         platform,
@@ -250,6 +270,10 @@ class WebhookController {
       }
       if (error.code === 'AI_EXTRACTION_FAILED') {
         return notifierService.send(platformId, MESSAGES.ERROR_AI_UNAVAILABLE, platform);
+      }
+      if (error.code === 'JOURNAL_ENTRY') {
+        logger.info({ platformId }, 'Journal entry received — not yet supported, silently acknowledged');
+        return;
       }
 
       logger.error('Reminder creation failed:', error.message);
@@ -281,7 +305,7 @@ class WebhookController {
       ? 'at the due time'
       : (STRATEGY_LABELS[strategy] || '1 hour before');
 
-    const summary = reminder.schedulingFailed
+    const summary = schedulingFailed
       ? `Reminder set! :)\n\n` +
         `Task: ${extracted.task}\n` +
         `Due: ${timeStr}\n\n` +

@@ -2,6 +2,8 @@
 const chrono = require('chrono-node');
 const env = require('../config/env');
 const logger = require('../utils/logger');
+const { AIOutputSchema } = require('../schemas/ai.schema');
+const { InvalidAIOutputError } = require('../lib/errors');
 
 // ─── CLAUDE SWAP ────────────────────────────────────────────────────────────
 // The claudeExtract method below uses fetch directly (no SDK required).
@@ -53,18 +55,35 @@ class AIService {
       throw new Error(`Input too long: ${messageText.length} characters (max 500)`);
     }
 
-    if (env.AI_PROVIDER === 'claude' && env.ANTHROPIC_API_KEY) {
-      return this.claudeExtract(messageText);
+    const rawIntent = (env.AI_PROVIDER === 'claude' && env.ANTHROPIC_API_KEY)
+      ? await this.claudeExtract(messageText)
+      : this.ruleExtract(messageText);
+
+    const parsed = AIOutputSchema.safeParse(rawIntent);
+    if (!parsed.success) {
+      logger.error({ issues: parsed.error.issues }, 'AI output failed schema validation');
+      throw new InvalidAIOutputError(parsed.error.issues);
     }
-    return this.ruleExtract(messageText);
+
+    if (parsed.data.intent === 'journal_entry') {
+      return { ...parsed.data, _routed: 'journal' };
+    }
+    if (parsed.data.intent === 'unrecognized') {
+      throw new InvalidAIOutputError([{ message: 'Unrecognized intent', input: parsed.data.raw }]);
+    }
+    return parsed.data;
   }
 
   ruleExtract(text) {
-    const parsed = chrono.parse(text, new Date(), { forwardDate: true });
+    const normalized = text
+      .replace(/(\d+)(min|mins|minute|minutes)/gi, '$1 minutes')
+      .replace(/(\d+)(hr|hrs|hour|hours)/gi, '$1 hours')
+      .replace(/(\d+)(sec|secs|second|seconds)/gi, '$1 seconds')
+      .trim();
+    const parsed = chrono.parse(normalized, new Date(), { forwardDate: true });
     if (!parsed.length) {
-      const err = new Error('NO_DEADLINE');
-      err.code = 'NO_DEADLINE';
-      throw err;
+      // Null parse → unrecognized intent; validated by AIOutputSchema at the exit point
+      return { intent: 'unrecognized', raw: text };
     }
     const eventTime = parsed[0].start.date();
 
@@ -100,9 +119,14 @@ class AIService {
       'personal';
 
     return {
+      intent: 'create_reminder',
+      title: task,
+      scheduledAt: eventTime, // Date — Zod transforms to Date; also kept in eventTime below
+      notes: null,
+      recurrence,
+      // Legacy fields — preserved via .passthrough() on ReminderIntentSchema
       task,
       eventTime: eventTime.toISOString(),
-      recurrence,
       urgency,
       suggestedNotificationStrategy: '1_hour_before',
       type,
@@ -179,8 +203,21 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
         this._recoverEventTimeWithChrono(extracted, messageText, now);
       }
 
-      logger.info('Claude extraction successful:', JSON.stringify(extracted));
-      return extracted;
+      logger.info(
+        { intent: extracted?.intent, hasEventTime: !!extracted?.eventTime },
+        'Claude extraction successful',
+      );
+      // Map to the unified intent shape (legacy fields preserved for compat)
+      return {
+        intent: extracted.eventTime ? 'create_reminder' : 'unrecognized',
+        title: extracted.task || 'Untitled reminder',
+        scheduledAt: extracted.eventTime || null,
+        notes: null,
+        recurrence: extracted.recurrence || 'none',
+        raw: extracted.eventTime ? undefined : messageText,
+        // Legacy fields
+        ...extracted,
+      };
     } catch {
       throw new Error('EXTRACTION_FAILED');
     }
@@ -213,7 +250,12 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
    * @param {Date} now - Reference time
    */
   _recoverEventTimeWithChrono(extracted, messageText, now) {
-    const parsed = chrono.parseDate(messageText, now, { forwardDate: true });
+    const normalized = messageText
+      .replace(/(\d+)(min|mins|minute|minutes)/gi, '$1 minutes')
+      .replace(/(\d+)(hr|hrs|hour|hours)/gi, '$1 hours')
+      .replace(/(\d+)(sec|secs|second|seconds)/gi, '$1 seconds')
+      .trim();
+    const parsed = chrono.parseDate(normalized, now, { forwardDate: true });
     if (!parsed) return;
 
     extracted.eventTime = parsed.toISOString();
@@ -231,23 +273,6 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
     }
   }
 
-  /**
-   * Pure-local fallback using chrono-node when no AI provider is available.
-   * @param {string} messageText
-   * @param {Date} now
-   * @returns {{task: string, eventTime: string|null, recurrence: string, urgency: string, suggestedNotificationStrategy: string}}
-   */
-  _fallbackExtraction(messageText, now) {
-    const parsed = chrono.parseDate(messageText, now, { forwardDate: true });
-    return {
-      task: messageText.substring(0, 50),
-      eventTime: parsed ? parsed.toISOString() : null,
-      recurrence: 'none',
-      urgency: 'medium',
-      suggestedNotificationStrategy: '30_minutes_before',
-      type: 'other',
-    };
-  }
 }
 
 module.exports = new AIService();

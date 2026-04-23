@@ -118,7 +118,7 @@ reminderSchema.statics.findActive = function (userId) {
   const now = new Date();
   return this.find({
     userId,
-    status: { $in: ['pending', 'parsed', 'scheduled', 'firing', 'fired'] },
+    status: { $in: [REMINDER_STATUS.PENDING, REMINDER_STATUS.PARSED, REMINDER_STATUS.SCHEDULED, REMINDER_STATUS.FIRING, REMINDER_STATUS.FIRED] },
     'extracted.deadline': { $gte: now },
   }).sort({ 'extracted.deadline': 1 });
 };

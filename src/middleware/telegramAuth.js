@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const env = require('../config/env');
 const User = require('../models/User');
 
-const MAX_INIT_DATA_AGE_SECONDS = 24 * 60 * 60;
+// 24-hour window accommodates Telegram WebView's initData caching behaviour.
+const MAX_INIT_DATA_AGE_SECONDS = 86400; // 24 hours
 
 const UNAUTHORIZED = { error: 'Unauthorized', code: 'UNAUTHORIZED' };
 

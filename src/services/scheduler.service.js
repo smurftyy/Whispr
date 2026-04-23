@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Reminder = require('../models/Reminder');
 const reminderFireQueue = require('../queues/reminder.queue');
 const logger = require('../utils/logger');
+const { REMINDER_STATUS } = require('../constants');
 
 class SchedulerService {
   constructor() {
@@ -26,8 +27,12 @@ class SchedulerService {
     for (const jobId of [idStr, `backfill-${idStr}`]) {
       const job = await reminderFireQueue.getJob(jobId);
       if (job) {
-        await job.remove();
-        removed += 1;
+        try {
+          await job.remove();
+          removed += 1;
+        } catch (err) {
+          logger.warn({ err, jobId: job.id }, 'Failed to remove stale job — skipping');
+        }
       }
     }
 
@@ -61,23 +66,28 @@ class SchedulerService {
    * one worker even when multiple instances race at startup.
    */
   async _backfillOrphans() {
-    logger.info('Running reminder backfill sweep...');
+    logger.info('Starting backfill of orphaned reminders...');
     let count = 0;
 
     while (true) {
-      const claimed = await Reminder.findOneAndUpdate(
-        { status: 'scheduled', scheduledAt: { $lte: new Date() } },
-        { $set: { status: 'firing', claimedAt: new Date() } },
-        { new: true, sort: { scheduledAt: 1 } },
-      );
-      if (!claimed) break;
+      try {
+        const claimed = await Reminder.findOneAndUpdate(
+          { status: REMINDER_STATUS.SCHEDULED, scheduledAt: { $lte: new Date() } },
+          { $set: { status: REMINDER_STATUS.FIRING, claimedAt: new Date() } },
+          { new: true, sort: { scheduledAt: 1 } },
+        );
+        if (!claimed) break;
 
-      await reminderFireQueue.add(
-        'fire',
-        { reminderId: claimed._id.toString() },
-        { jobId: `backfill-${claimed._id}` },
-      );
-      count += 1;
+        await reminderFireQueue.add(
+          'fire',
+          { reminderId: claimed._id.toString() },
+          { jobId: `backfill-${claimed._id}` },
+        );
+        count += 1;
+      } catch (err) {
+        logger.error({ err }, 'Backfill loop error — halting to prevent spin');
+        break;
+      }
     }
 
     logger.info(`Backfill complete — re-enqueued ${count} orphaned reminder(s)`);

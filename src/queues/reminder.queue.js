@@ -3,6 +3,8 @@ const Queue = require('bull');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 const { processReminderFire } = require('../services/notifier.service');
+const dlqQueue = require('./dlq');
+const Event = require('../models/Event');
 
 const useTls = env.REDIS_URL.startsWith('rediss://');
 
@@ -26,8 +28,27 @@ reminderFireQueue.on('completed', (job) => {
   logger.info(`Reminder fire job ${job.id} completed`);
 });
 
-reminderFireQueue.on('failed', (job, err) => {
-  logger.error(`Reminder fire job ${job.id} failed: ${err.message}`);
+reminderFireQueue.on('failed', async (job, err) => {
+  logger.error(`Reminder fire job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`);
+
+  if (job.attemptsMade >= job.opts.attempts) {
+    try {
+      await dlqQueue.add('dead', {
+        originalQueue: reminderFireQueue.name,
+        originalJobName: job.name,
+        data: job.data,
+        failureReason: err.message,
+        stack: err.stack,
+        failedAt: new Date().toISOString(),
+      });
+      await Event.create({
+        type: 'DeadLetterEvent',
+        payload: { queue: reminderFireQueue.name, jobId: job.id, reason: err.message },
+      });
+    } catch (dlqErr) {
+      logger.error(`Failed to route job ${job.id} to DLQ: ${dlqErr.message}`);
+    }
+  }
 });
 
 module.exports = reminderFireQueue;

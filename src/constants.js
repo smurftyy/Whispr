@@ -46,9 +46,9 @@ const REMINDER_STATUS = {
 
 const REMINDER_FREQUENCY = {
   NONE: 'none',
-  ONCE: 'none', // Alias for backward compatibility
   DAILY: 'daily',
   WEEKLY: 'weekly',
+  MONTHLY: 'monthly',
 };
 
 const REMINDER_URGENCY = {
@@ -90,7 +90,7 @@ const REMINDER_CONTEXT = {
 
 /**
  * AI-inferred notification strategies.
- * These map 1:1 with the values Gemini returns in `suggestedNotificationStrategy`.
+ * These map 1:1 with the values Chrono/Claude returns in `suggestedNotificationStrategy`.
  */
 const NOTIFICATION_STRATEGIES = {
   IMMEDIATE: 'immediate_only',
