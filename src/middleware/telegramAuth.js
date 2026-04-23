@@ -3,9 +3,8 @@ const env = require('../config/env');
 const User = require('../models/User');
 const { createRedisClient } = require('../config/redis');
 
-// Tightened to match nonce TTL — tokens older than this cannot be replayed
-// even after their nonce key expires from Redis.
-const MAX_INIT_DATA_AGE_SECONDS = 10 * 60; // 10 minutes
+// 24-hour window accommodates Telegram WebView's initData caching behaviour.
+const MAX_INIT_DATA_AGE_SECONDS = 86400; // 24 hours
 const NONCE_TTL_SECONDS = 600;
 
 const redisClient = createRedisClient(env.REDIS_URL);

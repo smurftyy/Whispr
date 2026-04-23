@@ -75,7 +75,12 @@ class AIService {
   }
 
   ruleExtract(text) {
-    const parsed = chrono.parse(text, new Date(), { forwardDate: true });
+    const normalized = text
+      .replace(/(\d+)(min|mins|minute|minutes)/gi, '$1 minutes')
+      .replace(/(\d+)(hr|hrs|hour|hours)/gi, '$1 hours')
+      .replace(/(\d+)(sec|secs|second|seconds)/gi, '$1 seconds')
+      .trim();
+    const parsed = chrono.parse(normalized, new Date(), { forwardDate: true });
     if (!parsed.length) {
       // Null parse → unrecognized intent; validated by AIOutputSchema at the exit point
       return { intent: 'unrecognized', raw: text };
@@ -245,7 +250,12 @@ Do NOT include any commentary or markdown blocks. Just the raw JSON.`;
    * @param {Date} now - Reference time
    */
   _recoverEventTimeWithChrono(extracted, messageText, now) {
-    const parsed = chrono.parseDate(messageText, now, { forwardDate: true });
+    const normalized = messageText
+      .replace(/(\d+)(min|mins|minute|minutes)/gi, '$1 minutes')
+      .replace(/(\d+)(hr|hrs|hour|hours)/gi, '$1 hours')
+      .replace(/(\d+)(sec|secs|second|seconds)/gi, '$1 seconds')
+      .trim();
+    const parsed = chrono.parseDate(normalized, now, { forwardDate: true });
     if (!parsed) return;
 
     extracted.eventTime = parsed.toISOString();
