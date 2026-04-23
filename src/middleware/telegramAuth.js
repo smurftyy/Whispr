@@ -1,13 +1,9 @@
 const crypto = require('crypto');
 const env = require('../config/env');
 const User = require('../models/User');
-const { createRedisClient } = require('../config/redis');
 
 // 24-hour window accommodates Telegram WebView's initData caching behaviour.
 const MAX_INIT_DATA_AGE_SECONDS = 86400; // 24 hours
-const NONCE_TTL_SECONDS = 600;
-
-const redisClient = createRedisClient(env.REDIS_URL);
 
 const UNAUTHORIZED = { error: 'Unauthorized', code: 'UNAUTHORIZED' };
 
@@ -73,18 +69,6 @@ async function telegramAuth(req, res, next) {
   const expectedHash = computeHash(env.TELEGRAM_BOT_TOKEN, buildDataCheckString(params));
   if (expectedHash !== hash) {
     return res.status(401).json(UNAUTHORIZED);
-  }
-
-  // Nonce check — sha256 of the raw initData string is stable and unpredictable
-  const nonce = crypto.createHash('sha256').update(initData).digest('hex');
-  try {
-    const ok = await redisClient.set(`tg:nonce:${nonce}`, '1', 'EX', NONCE_TTL_SECONDS, 'NX');
-    if (!ok) {
-      return res.status(401).json({ error: 'replay_detected' });
-    }
-  } catch {
-    // Fail closed — a Redis outage must not open the gate
-    return res.status(503).json({ error: 'service_unavailable' });
   }
 
   const platformId = telegramUser.id.toString();
