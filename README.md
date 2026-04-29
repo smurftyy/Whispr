@@ -1,41 +1,65 @@
 # Whispr
-
-<div align="center">
-
 # Whispr
 
-*A quiet, AI-powered reminder and journaling assistant — living inside Telegram.*
+A Telegram bot that turns natural language into scheduled reminders.
 
-[![Built for](https://img.shields.io/badge/Built_for-Claude_Hackathon-0a0a0a)](https://anthropic.com)
-[![Stack](https://img.shields.io/badge/Stack-Node.js_·_MongoDB_·_Redis_·_Claude-1c1b1b)](#-tech-stack)
-[![Deploy](https://img.shields.io/badge/Deploy-Render_+_Vercel-1c1b1b)](#-deployment)
-
-</div>
+Say "remind me to submit my assignment tomorrow at 11pm" and Whispr parses it, schedules it, and fires a notification at the right time. There's also a Mini App — a visual dashboard inside Telegram for managing everything you've set.
 
 ---
 
-## What is Whispr?
+## Demo
 
-Talk to Whispr in natural language — *"remind me to call mom tomorrow at 7pm"* — and it parses, schedules, and fires a notification back to you at exactly the right moment.
-
-The bot ships with a **Telegram Mini App (TMA)** frontend: a visual dashboard for managing, reviewing, and archiving reminders, plus a journal mode for capturing the thoughts behind the intent.
-
----
-
-## ✨ Features
-
-- **Natural-language capture** — powered by the Claude API for intent extraction (title, datetime, notes, recurrence hints)
-- **Telegram-native** — works both as a conversational bot and as a Mini App embedded in Telegram
-- **Reliable delivery** — durable Bull/Redis queue survives process restarts; no reminder is ever dropped silently
-- **Event-driven core** — every stage (`message_received → reminder_parsed → reminder_scheduled → reminder_fired`) is an event that can be replayed, retried, and audited
-- **Visual dashboard** — glassmorphic React 19 TMA for triaging, completing, and archiving reminders
-- **Journal mode** — capture free-form thoughts alongside structured reminders
+**Bot:** [t.me/WhisprBot](https://t.me/WhisprBot)  
+**Mini App:** [whispr-mini.vercel.app](https://whispr-mini.vercel.app)  
+**Product demo (interactive story):** [whispr-mini.vercel.app/demo](https://whispr-mini.vercel.app/demo)
 
 ---
 
-## 🏗️ Architecture
+## Why event-driven?
 
-Whispr is built as an **event-driven state machine**. Nothing is called directly — every stage emits an event into a durable queue, workers claim jobs atomically, and side effects (AI calls, Telegram sends) happen inside retry-safe workers. State is the source of truth; services only move state forward.
+Reminders are time-sensitive and failure-sensitive:
+
+- Messages can arrive more than once → idempotency required
+- Delivery can fail → retries and a dead-letter queue needed
+- Processes can restart at any time → durable queue required
+
+An event-driven model means no reminder is lost during a restart, failures are recoverable, and every state transition is auditable. Two components never talk directly — a queue always sits between them.
+
+---
+
+## How it actually flows
+
+```
+User: "remind me to drink water in 10 minutes"
+
+→ webhook receives message
+→ idempotency check (duplicate? drop it)
+→ message_received event persisted
+→ chrono-node extracts: { task: "drink water", scheduledAt: +10min }
+   Note: parsing is best-effort — ambiguous inputs may require clarification (planned)
+→ reminder_parsed — state saved to MongoDB
+→ Bull job scheduled for scheduledAt
+→ reminder_scheduled
+→ job fires at T+10min
+→ Telegram notification sent
+→ reminder_fired
+```
+
+**If Telegram delivery fails:**
+
+```
+→ send attempt 1 fails
+→ RetryEvent — exponential backoff (2s, 4s, 8s...)
+→ after 5 attempts → DLQEvent
+→ reminder transitions to FAILED
+→ failure metadata persisted (reason, timestamp)
+```
+
+A repair sweep runs every 5 minutes to catch anything stuck mid-flight — reminders stalled in `parsed`, `scheduled`, or `firing` get recovered automatically.
+
+---
+
+## Architecture
 
 ```
                 ┌────────────────────────────┐
@@ -45,11 +69,9 @@ Whispr is built as an **event-driven state machine**. Nothing is called directly
                              ▼
                 ┌────────────────────────────┐
                 │   Ingestion Service        │
-                │   (Express controller)     │
                 │   POST /webhook/telegram   │
                 │                            │
-                │ - verify Telegram signature│
-                │ - extract messageId        │
+                │ - verify secret token      │
                 │ - idempotency guard        │
                 │ - persist raw event        │
                 └────────────┬───────────────┘
@@ -57,26 +79,25 @@ Whispr is built as an **event-driven state machine**. Nothing is called directly
                              ▼
                 ┌────────────────────────────┐
                 │   Bull Queue (Redis)       │
-                │   Durable event stream     │
+                │   Durable job stream       │
                 └────────────┬───────────────┘
                              │
         ┌────────────────────┼────────────────────┐
         ▼                    ▼                    ▼
 ┌────────────────┐  ┌────────────────┐  ┌─────────────────┐
-│ AI Parser      │  │ Reminder       │  │ User Context    │
+│ NLP Parser     │  │ Reminder       │  │ User Context    │
 │ Worker         │  │ Builder        │  │ Service         │
 │                │  │                │  │                 │
-│ Claude API     │  │ Zod-validated  │  │ Preferences,    │
-│ → intent JSON  │  │ → normalized   │  │ timezone, chat  │
+│ chrono-node    │  │ Zod-validated  │  │ timezone,       │
+│ → intent JSON  │  │ → normalized   │  │ locale, profile │
 └──────┬─────────┘  └──────┬─────────┘  └────────┬────────┘
-       │                   │                     │
-       └──────────┬────────┴──────────┬──────────┘
-                  ▼                   ▼
+       │                   │                      │
+       └──────────┬────────┴──────────────────────┘
+                  ▼
          ┌────────────────────────────────────┐
          │          MongoDB                   │
-         │  ─────────────────────────────     │
-         │  messages   reminders   jobs       │
-         │  users      events (audit log)     │
+         │  messages   reminders   users      │
+         │  events (audit log)                │
          └──────────────┬─────────────────────┘
                         │
                         ▼
@@ -85,7 +106,7 @@ Whispr is built as an **event-driven state machine**. Nothing is called directly
          │                                    │
          │ - atomic job claim                 │
          │ - enforces state transitions       │
-         │ - fires when scheduledAt ≤ now     │
+         │ - fires when scheduledAt <= now    │
          └──────────────┬─────────────────────┘
                         │
                         ▼
@@ -107,89 +128,81 @@ Whispr is built as an **event-driven state machine**. Nothing is called directly
          └────────────────────────────────────┘
 ```
 
-### Design principles
+**Design principles**
 
-1. **Everything is an event.** Replayable, debuggable, recoverable.
-2. **State machine is the source of truth.** `pending → parsed → scheduled → fired → (completed | failed)`. Workers only move state forward.
-3. **Idempotency is global.** Every entity carries a stable ID; every handler asks *"did I already process this?"* before side-effecting.
-4. **Queues sit between every service.** If two components talked directly, the architecture would be incomplete.
-5. **Failures are first-class events.** Emitted, logged, and observable — not swallowed.
+- Core flows are event-driven to ensure durability and retry safety.
+- State machine is the source of truth. `parsed → scheduled → firing → fired | failed`. Workers only move state forward.
+- Idempotency is global. Every handler checks before side-effecting.
+- Failures are first-class. Emitted, logged, and observable — not swallowed.
 
 ---
 
-## 🛠️ Tech Stack
+## Tech stack
 
-**Frontend — Telegram Mini App**
+**Frontend**
 - React 19 + Vite
 - TanStack React Query
 - Telegram Web App SDK
-- Axios · Tailwind CSS
-- Deployed on **Vercel**
+- Tailwind CSS
+- Deployed on Vercel
 
 **Backend**
 - Node.js + Express
-- MongoDB (reminders, messages, jobs, users, audit events)
-- Redis + **Bull** (durable job queue, retries, DLQ)
-- **Claude API** (Anthropic) — natural-language intent extraction
-- Telegram Bot API — webhook ingress + notification egress
-- Deployed on **Render**
-
-**Tooling**
-- Notion — PRD, architecture docs, and issue backlog
-- Claude Code — targeted, prompt-driven code fixes
+- MongoDB + Mongoose
+- Redis + Bull
+- chrono-node
+- Telegram Bot API
+- Deployed on Render
 
 ---
 
-## 📁 Repo Structure
+## Repo structure
 
 ```
 Whispr/
-├── whispr-mini/                    # React 19 + Vite TMA frontend
-│   ├── src/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   ├── hooks/
-│   │   └── lib/
-│   └── vite.config.js
+├── server.js                     # Entry point, webhook registration
+├── src/
+│   ├── controllers/
+│   │   └── webhook.controller.js
+│   ├── services/
+│   │   ├── ai.service.js         # chrono-node NLP wrapper
+│   │   ├── reminder.service.js
+│   │   ├── scheduler.service.js
+│   │   └── notifier.service.js
+│   ├── models/                   # Reminder, Message, User
+│   ├── middleware/               # telegramAuth, cors, rateLimiter
+│   ├── queues/                   # Bull workers + job definitions
+│   └── config/                   # env, db, redis
 │
-└── backend/                        # Node.js + Express API
+└── whispr-mini/                  # React 19 TMA frontend
     └── src/
-        ├── controllers/            # webhook.controller.js
-        ├── services/
-        │   ├── ai.service.js       # Claude adapter
-        │   ├── reminder.service.js
-        │   ├── scheduler.service.js
-        │   └── notifier.service.js
-        ├── models/                 # Reminder, Message, Job, User, Event
-        ├── middleware/             # telegramAuth
-        ├── queues/                 # Bull workers + job definitions
-        ├── config/                 # env, db, redis
-        └── index.js
+        ├── components/
+        ├── pages/
+        ├── hooks/
+        └── lib/
 ```
 
 ---
 
-## 🚀 Quick Start
+## Quick start
 
-### Prerequisites
-- Node.js ≥ 20
+**Prerequisites**
+- Node.js >= 20
 - MongoDB (local or Atlas)
 - Redis (local or Upstash)
-- A Telegram bot token from [@BotFather](https://t.me/BotFather)
-- An Anthropic API key
+- Telegram bot token from BotFather
 
-### Backend
+**Backend**
 
 ```bash
-cd backend
 npm install
-cp .env.example .env   # fill in the values below
+cp .env.example .env
 npm run dev
 ```
 
-Expose your local backend to Telegram for webhook testing (ngrok, cloudflared, etc.) and point `TELEGRAM_WEBHOOK_URL` at `https://<your-tunnel>/webhook/telegram`.
+Expose your local server for webhook testing (ngrok or cloudflared) and point `TELEGRAM_WEBHOOK_URL` at `https://<tunnel>/webhook/telegram`.
 
-### Frontend (TMA)
+**Frontend**
 
 ```bash
 cd whispr-mini
@@ -198,75 +211,74 @@ cp .env.example .env
 npm run dev
 ```
 
-Register the Mini App URL with BotFather via `/newapp` (or `/editapp`) so Telegram embeds it in the bot's menu button.
+Register the Mini App URL with BotFather via `/newapp`.
 
 ---
 
-## 🔐 Environment Variables
+## Environment variables
 
-### Backend (`backend/.env`)
-
-| Variable | Required | Description |
-|---|---|---|
-| `NODE_ENV` | ✅ | `development` \| `production` |
-| `PORT` | ✅ | HTTP port (Render injects this in prod) |
-| `MONGODB_URI` | ✅ | Mongo connection string |
-| `REDIS_URL` | ✅ | Redis connection string (Bull backend) |
-| `TELEGRAM_BOT_TOKEN` | ✅ | From @BotFather |
-| `TELEGRAM_WEBHOOK_URL` | ✅ | Public HTTPS URL for `/webhook/telegram` |
-| `TELEGRAM_WEBHOOK_SECRET` | ✅ | Secret token for signature verification |
-| `ANTHROPIC_API_KEY` | ✅ | Claude API key |
-| `AI_PROVIDER` | ✅ | Set to `claude` |
-| `ANTHROPIC_MODEL` | ⬜ | Defaults to `claude-sonnet-4-20250514` |
-| `FRONTEND_URL` | ✅ | TMA origin (CORS allowlist) |
-
-### Frontend (`whispr-mini/.env`)
+**Backend**
 
 | Variable | Required | Description |
 |---|---|---|
-| `VITE_API_BASE_URL` | ✅ | Backend origin (e.g. `https://whispr-9465.onrender.com`) |
+| `NODE_ENV` | yes | `development` or `production` |
+| `PORT` | yes | HTTP port |
+| `MONGODB_URI` | yes | MongoDB connection string |
+| `REDIS_URL` | yes | Redis connection string |
+| `TELEGRAM_BOT_TOKEN` | yes | From BotFather |
+| `TELEGRAM_WEBHOOK_URL` | yes | Public HTTPS URL for `/webhook/telegram` |
+| `TELEGRAM_WEBHOOK_SECRET` | yes | Secret token for webhook verification |
+| `CORS_ALLOWED_ORIGINS` | yes | Comma-separated list of allowed origins |
+
+**Frontend**
+
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_API_BASE_URL` | yes | Backend origin |
 
 ---
 
-## 🌐 API & Webhooks
+## API
 
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| `POST` | `/webhook/telegram` | Telegram signature + secret token | Ingress from Telegram (outside `/api` to bypass Mini App auth middleware) |
-| `GET` | `/api/reminders` | `telegramAuth` (initData) | List caller's reminders |
-| `POST` | `/api/reminders` | `telegramAuth` | Manually create a reminder from the TMA |
-| `PATCH` | `/api/reminders/:id` | `telegramAuth` | Update (e.g. mark completed) |
-| `DELETE` | `/api/reminders/:id` | `telegramAuth` | Delete |
-| `GET` | `/api/journal` | `telegramAuth` | List journal entries |
-| `GET` | `/health` | none | Liveness probe |
+| `POST` | `/webhook/telegram` | Telegram secret header | Ingress from Telegram |
+| `GET` | `/api/reminders` | Telegram initData | List reminders |
+| `POST` | `/api/reminders` | Telegram initData | Create reminder |
+| `PATCH` | `/api/reminders/:id` | Telegram initData | Update reminder |
+| `DELETE` | `/api/reminders/:id` | Telegram initData | Delete reminder |
+| `PATCH` | `/api/profile` | Telegram initData | Update timezone/locale |
+| `GET` | `/health` | none | Liveness check |
+| `GET` | `/readyz` | none | Readiness check (Mongo + Redis) |
 
 ---
 
-## 🛫 Deployment
+## Observability (planned)
 
-- **Frontend** — Vercel auto-deploys from `main`. `vite` and build tooling live in `dependencies` (not `devDependencies`) so the Vercel build machine can find them.
-- **Backend** — Render auto-deploys from `main`. Redis and MongoDB live as managed services (Render Redis / MongoDB Atlas).
-- The Telegram webhook is routed **outside** the `/api` prefix (`/webhook/telegram`) so it bypasses the `telegramAuth` middleware that protects Mini App endpoints.
-
----
-
-## 🗺️ Roadmap
-
-- Recurring reminders (`every weekday at 9am`)
-- Voice notes → Whisper transcription → intent parse
-- WhatsApp transport (ingestion abstraction already in place)
-- Journal analytics + weekly reflection digests
-- Shared reminders for small groups
+- Structured logs for each state transition
+- Queue metrics (depth, retry rate, DLQ count)
+- Failure rate tracking per notification attempt
 
 ---
 
-## 👥 Credits
+## Deployment
 
-Built by **smurftyy** (backend) and **Daniel** (frontend). 
+**Vercel** auto-deploys from `main`. Build tooling lives in `dependencies` so the Vercel build environment can find it.
 
+**Render** auto-deploys from `main`. Redis and MongoDB run as managed services.
+
+The webhook route (`/webhook/telegram`) sits outside the `/api` prefix so it bypasses the `telegramAuth` middleware that protects Mini App endpoints.
 
 ---
 
-## 📝 License
+## Roadmap
+
+- Recurring reminders
+- Voice note input
+- WhatsApp support
+
+---
+**Built to solve a very real problem: forgetting what matters when no one is there to remind you.**
+## License
 
 MIT
