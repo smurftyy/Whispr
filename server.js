@@ -3,6 +3,7 @@
 const env = require('./src/config/env');
 
 const app = require('./src/app');
+const { errorHandler } = app;
 const connectDB = require('./src/config/database');
 const logger = require('./src/utils/logger');
 
@@ -26,10 +27,18 @@ const startServer = async () => {
 
     // 2. Messaging adapter — swap this block to change platforms
     const telegram = new TelegramAdapter(env.TELEGRAM_BOT_TOKEN);
-    const webhookUrl = env.isProd
-      ? 'https://whispr-9465.onrender.com/webhook/telegram'
-      : null;
-    await telegram.start(webhookUrl);
+    const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL || null;
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET || null;
+
+    if (env.isProd && !webhookUrl) {
+      throw new Error('TELEGRAM_WEBHOOK_URL is required in production');
+    }
+
+    if (env.isProd && !webhookSecret) {
+      throw new Error('TELEGRAM_WEBHOOK_SECRET is required in production');
+    }
+
+    await telegram.start(webhookUrl, webhookSecret);
     await telegram.configureMiniApp(env.MINI_APP_URL);
     telegram.onMessage(async (from, body, messageId) => {
       logger.info({ from, messageId }, 'Message received');
@@ -46,12 +55,15 @@ const startServer = async () => {
     app.post('/webhook/telegram', (req, res) => webhookController.handleTelegramWebhook(req, res));
 
     // 4. API routes (telegramAuth applies here but not to the webhook above)
+    app.use('/api/profile', require('./src/routes/profile.routes'));
     app.use('/api', require('./src/routes/api.routes'));
 
     // 5. 404 handler — must come after all routes
     app.use((req, res) => {
       res.status(404).json({ error: 'Route not found' });
     });
+
+    app.use(errorHandler);
 
     // 5. HTTP server
     const server = app.listen(env.PORT, () => {

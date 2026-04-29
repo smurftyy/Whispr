@@ -1,4 +1,5 @@
 // src/controllers/webhook.controller.js — Message Handler (Platform-Agnostic)
+const crypto = require('crypto');
 const Queue = require('bull');
 const User = require('../models/User');
 const Message = require('../models/Message');
@@ -71,6 +72,28 @@ class WebhookController {
    * @param {import('express').Response} res
    */
   async handleTelegramWebhook(req, res) {
+    if (env.NODE_ENV !== 'production') {
+      logger.warn('Webhook secret check bypassed in non-production');
+    } else {
+      const secretHeader = req.get('X-Telegram-Bot-Api-Secret-Token');
+      const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+      if (!secretHeader || !expectedSecret) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const secretHeaderBuffer = Buffer.from(secretHeader);
+      const expectedSecretBuffer = Buffer.from(expectedSecret);
+
+      if (secretHeaderBuffer.length !== expectedSecretBuffer.length) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      if (!crypto.timingSafeEqual(secretHeaderBuffer, expectedSecretBuffer)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
     const messageId = String(req.body?.update_id ?? '');
     if (!messageId) {
       logger.warn('Webhook received update with no update_id — ignoring');
@@ -91,7 +114,13 @@ class WebhookController {
       await messageQueue.add(
         'message_received',
         { messageId },
-        { jobId: messageId, removeOnComplete: 1000, removeOnFail: 5000 },
+        {
+          jobId: messageId,
+          attempts: 5,
+          backoff: { type: 'exponential', delay: 2000 },
+          removeOnComplete: true,
+          removeOnFail: false,
+        },
       );
 
       // 4. Respond only after both writes are durable
@@ -183,7 +212,7 @@ class WebhookController {
    * @param {string} messageText - Raw message content
    * @param {string} messageId - Message ID for deduplication
    */
-  async processMessage(platformId, messageText, messageId) {
+  async processMessage(platformId, messageText, _messageId) {
     try {
       const platform = 'telegram'; // resolved at adapter layer
 
@@ -232,12 +261,17 @@ class WebhookController {
           return this._handleIdle(user, messageText, platformId, platform);
       }
     } catch (error) {
+      // Domain-final outcomes are handled inside specific handlers (NO_DEADLINE,
+      // AI_EXTRACTION_FAILED, JOURNAL_ENTRY, NOT_FOUND). Anything reaching here
+      // is a DB/Redis/unexpected error — surface to Bull so the job retries
+      // and the message is not falsely marked 'parsed'.
       logger.error('Process message error:', error.message);
       try {
         await notifierService.send(platformId, MESSAGES.ERROR_GENERIC, 'telegram');
       } catch (sendErr) {
         logger.error('Failed to send error response:', sendErr.message);
       }
+      throw error;
     }
   }
 
@@ -256,9 +290,9 @@ class WebhookController {
 
     await notifierService.send(platformId, MESSAGES.PROCESSING, platform);
 
-    let extracted, reminder, schedulingFailed;
+    let extracted, _reminder, schedulingFailed;
     try {
-      ({ reminder, extracted, schedulingFailed } = await reminderService.createFromText(
+      ({ reminder: _reminder, extracted, schedulingFailed } = await reminderService.createFromText(
         user._id,
         platformId,
         platform,
@@ -276,8 +310,15 @@ class WebhookController {
         return;
       }
 
+      // DB/Redis/unexpected — let Bull retry instead of swallowing
       logger.error('Reminder creation failed:', error.message);
-      return notifierService.send(platformId, MESSAGES.ERROR_GENERIC, platform);
+      throw error;
+    }
+
+    if (schedulingFailed) {
+      // Reminder is persisted at 'parsed' with a schedulingError stamp.
+      // Repair sweep will pick it up — do not send a user-facing confirmation.
+      return;
     }
 
     // Confirmation summary — always sent regardless of scheduling outcome
@@ -305,18 +346,13 @@ class WebhookController {
       ? 'at the due time'
       : (STRATEGY_LABELS[strategy] || '1 hour before');
 
-    const summary = schedulingFailed
-      ? `Reminder set! :)\n\n` +
-        `Task: ${extracted.task}\n` +
-        `Due: ${timeStr}\n\n` +
-        `(Scheduling had a hiccup — your reminder is saved and will retry shortly.)\n\n` +
-        `Type /list to see all your reminders.`
-      : `Reminder set! :)\n\n` +
-        `Task: ${extracted.task}\n` +
-        `Due: ${timeStr}\n` +
-        `Alert: ${alertLabel}\n` +
-        `Repeat: ${extracted.recurrence || 'none'}\n\n` +
-        `Type /list to view all reminders or /delete [id] to remove one.`;
+    const summary =
+      `Reminder set! :)\n\n` +
+      `Task: ${extracted.task}\n` +
+      `Due: ${timeStr}\n` +
+      `Alert: ${alertLabel}\n` +
+      `Repeat: ${extracted.recurrence || 'none'}\n\n` +
+      `Type /list to view all reminders or /delete [id] to remove one.`;
 
     try {
       await notifierService.send(platformId, summary, platform, {

@@ -31,13 +31,6 @@ const env = {
 
   /** Timezone (optional override, default relies on system) */
   TZ: process.env.TZ || undefined,
-
-  /** AI provider — 'chrono' (default, no key needed) or 'claude' */
-  AI_PROVIDER: process.env.AI_PROVIDER || 'chrono',
-
-  /** Anthropic / Claude (optional — only used when AI_PROVIDER=claude) */
-  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || null,
-  ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
 };
 
 // ---------------------------------------------------------------------------
@@ -50,12 +43,6 @@ if (missing.length > 0) {
   console.error(`Missing required environment variables: ${missing.join(', ')}`);
   console.error('   Copy .env.example to .env and fill in the values.');
   process.exit(1);
-}
-
-if (env.AI_PROVIDER === 'claude' && !env.ANTHROPIC_API_KEY) {
-  console.warn(
-    'ANTHROPIC_API_KEY not set — Claude stub inactive, falling back to chrono parser.'
-  );
 }
 
 module.exports = env;

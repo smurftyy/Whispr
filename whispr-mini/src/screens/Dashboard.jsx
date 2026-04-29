@@ -1,5 +1,5 @@
 import { createElement, useEffect, useMemo, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion as Motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle2, Clock3, Layers, Plus, Trash2 } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import BottomNav from '../components/BottomNav'
@@ -100,13 +100,13 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
         <section className="mt-8 flex min-h-0 flex-1 flex-col">
           <h2 className="text-4xl text-white">Your Reminders</h2>
 
-          <motion.div
+          <Motion.div
             className="mt-4 flex-1 space-y-4 overflow-y-auto"
             initial={false}
           >
             {isLoading &&
               [1, 2, 3].map((placeholder, i) => (
-                <motion.div
+                <Motion.div
                   key={placeholder}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -116,14 +116,14 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
               ))}
 
             {!isLoading && reminders.length === 0 && (
-              <motion.div
+              <Motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.22 }}
                 className="whispr-card rounded-2xl bg-[var(--whispr-surface)] p-5 text-sm text-white/65"
               >
                 No reminders yet. Tap + to create your first one.
-              </motion.div>
+              </Motion.div>
             )}
 
             <AnimatePresence initial={false}>
@@ -134,7 +134,7 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
                   const relativeTime = getReminderRelativeTime(reminder)
 
                   return (
-                    <motion.article
+                    <Motion.article
                       key={reminder.id}
                       initial={{ opacity: 0, y: 14 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -150,7 +150,7 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
                         aria-label={`Open reminder ${getReminderTitle(reminder)}`}
                       />
 
-                      <motion.button
+                      <Motion.button
                         type="button"
                         onClick={(event) => handleOpenDeleteConfirm(event, reminder)}
                         whileTap={{ scale: 0.85 }}
@@ -158,7 +158,7 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
                         aria-label={`Delete reminder ${getReminderTitle(reminder)}`}
                       >
                         <Trash2 size={16} />
-                      </motion.button>
+                      </Motion.button>
 
                       <div className="relative z-10 pr-12">
                         <p className="font-display text-[2rem] leading-tight text-white">
@@ -175,11 +175,11 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
                           {relativeTime}
                         </span>
                       </div>
-                    </motion.article>
+                    </Motion.article>
                   )
                 })}
             </AnimatePresence>
-          </motion.div>
+          </Motion.div>
         </section>
       </main>
 
@@ -194,7 +194,7 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
         confirmClassName="bg-[#ff9b96] text-[#2a1414]"
       />
 
-      <motion.button
+      <Motion.button
         type="button"
         aria-label="Create reminder"
         onClick={onOpenCreate}
@@ -204,7 +204,7 @@ function Dashboard({ onOpenCreate, onOpenDetail, activeTab, onNavigate }) {
         className="fixed bottom-[6.3rem] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-white text-black shadow-[0_20px_35px_rgba(0,0,0,0.45)] sm:right-6"
       >
         <Plus size={24} />
-      </motion.button>
+      </Motion.button>
 
       <BottomNav activeTab={activeTab} onNavigate={onNavigate} />
     </div>

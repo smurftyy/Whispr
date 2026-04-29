@@ -36,7 +36,19 @@ const userSchema = new mongoose.Schema({
   },
   timezone: {
     type: String,
-    default: 'Africa/Lagos',
+    default: null,
+  },
+  timezoneConfirmed: {
+    type: Boolean,
+    default: false,
+  },
+  locale: {
+    type: String,
+    default: null,
+  },
+  profileSyncedAt: {
+    type: Date,
+    default: null,
   },
   preferences: {
     reminderTiming: {

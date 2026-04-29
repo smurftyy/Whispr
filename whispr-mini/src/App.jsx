@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion as Motion } from 'framer-motion'
 import Dashboard from './screens/Dashboard'
 import CreateReminder from './screens/CreateReminder'
 import ReminderDetail from './screens/ReminderDetail'
@@ -7,6 +7,7 @@ import Insights from './screens/Insights'
 import SettingsPage from './screens/SettingsPage'
 import ArchivePage from './screens/ArchivePage'
 import { applyTelegramTheme } from './utils/telegram'
+import api from './api/axios'
 
 const pageTransition = {
   initial: { opacity: 0, y: 18 },
@@ -24,6 +25,10 @@ function App() {
 
   useEffect(() => {
     applyTelegramTheme()
+    api.patch('/api/profile', {
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      locale: navigator.language,
+    }).catch(() => {})
   }, [])
 
   const navigateToScreen = (nextScreen = 'dashboard') => {
@@ -104,9 +109,9 @@ function App() {
 
   return (
     <AnimatePresence mode="wait">
-      <motion.div key={screen} {...pageTransition} style={{ minHeight: '100%' }}>
+      <Motion.div key={screen} {...pageTransition} style={{ minHeight: '100%' }}>
         {screenContent}
-      </motion.div>
+      </Motion.div>
     </AnimatePresence>
   )
 }

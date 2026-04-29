@@ -140,7 +140,7 @@ const MESSAGES = {
     '/help — Show this menu',
 
   reminderAlert: (task, time) =>
-    `Hey! It\'s time to ${task}. You\'ve got this. :)\n\nDue: ${time}`,
+    `Hey! It's time to ${task}. You've got this. :)\n\nDue: ${time}`,
 
   selectPersona: () =>
     'Quick setup — which describes you best? :)\n\n' +

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion as Motion } from 'framer-motion'
 import { ArrowLeft, CalendarDays, Clock3, Pencil, Trash2 } from 'lucide-react'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatusBadge from '../components/StatusBadge'
@@ -71,7 +71,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
       <header className="fixed inset-x-0 top-0 z-40 px-4 pt-4 sm:px-6 sm:pt-5">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between">
           <div className="flex items-center gap-3">
-            <motion.button
+            <Motion.button
               type="button"
               aria-label="Back"
               onClick={onNavigateDashboard}
@@ -81,11 +81,11 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
               className="flex h-10 w-10 items-center justify-center rounded-full bg-white/6 text-white shadow-[0_12px_20px_rgba(0,0,0,0.3)]"
             >
               <ArrowLeft size={18} />
-            </motion.button>
+            </Motion.button>
             <StatusBadge status={reminderStatus} />
           </div>
 
-          <motion.button
+          <Motion.button
             type="button"
             aria-label="Edit reminder"
             onClick={() => onNavigateEdit?.(reminderId)}
@@ -95,13 +95,13 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
             className="flex h-10 w-10 items-center justify-center rounded-full bg-white/6 text-white shadow-[0_12px_20px_rgba(0,0,0,0.3)]"
           >
             <Pencil size={18} />
-          </motion.button>
+          </Motion.button>
         </div>
       </header>
 
       <main className="mx-auto min-h-screen w-full max-w-4xl px-4 pb-44 pt-24 sm:px-6 sm:pt-28">
         {isLoading && (
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22 }}
@@ -212,7 +212,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
 
       <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/86 to-transparent px-4 pb-safe pt-10 sm:px-6">
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">
-          <motion.button
+          <Motion.button
             type="button"
             onClick={() => {
               if (!reminder?.id || isCompleting) return
@@ -232,9 +232,9 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
             className="whispr-pill rounded-full bg-white px-6 py-4 text-base font-medium text-black disabled:cursor-not-allowed disabled:opacity-45"
           >
             {isCompleting ? 'Completing…' : 'Mark as Completed'}
-          </motion.button>
+          </Motion.button>
 
-          <motion.button
+          <Motion.button
             type="button"
             onClick={() => setShowDeleteConfirm(true)}
             disabled={!reminder || isDeleting}
@@ -244,7 +244,7 @@ function ReminderDetail({ reminderId, onNavigateDashboard, onNavigateEdit }) {
           >
             <Trash2 size={18} />
             {isDeleting ? 'Deleting...' : 'Delete Reminder'}
-          </motion.button>
+          </Motion.button>
         </div>
       </div>
 

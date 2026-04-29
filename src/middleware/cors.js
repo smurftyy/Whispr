@@ -1,20 +1,22 @@
 const env = require('../config/env');
 
-const ALLOWED_ORIGINS = new Set([
-  'https://web.telegram.org',
-  ...(env.MINI_APP_URL ? [env.MINI_APP_URL] : []),
-]);
+const configuredOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : (env.isProd ? [] : ['*']);
+
+const ALLOWED_ORIGINS = new Set(configuredOrigins);
 
 function miniAppCors(req, res, next) {
   const origin = req.headers.origin;
-  const allowed = origin && ALLOWED_ORIGINS.has(origin);
+  const allowAllOrigins = ALLOWED_ORIGINS.has('*');
+  const allowed = origin && (allowAllOrigins || ALLOWED_ORIGINS.has(origin));
 
   if (allowed) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Vary', 'Origin');
     res.set('Access-Control-Allow-Credentials', 'true');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.set('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+    res.set('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
   }
 
   if (req.method === 'OPTIONS') {

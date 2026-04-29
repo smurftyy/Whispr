@@ -2,7 +2,7 @@
 const Queue = require('bull');
 const env = require('../config/env');
 const logger = require('../utils/logger');
-const { processReminderFire } = require('../services/notifier.service');
+const { processReminderFire, finalizeFailure } = require('../services/notifier.service');
 const dlqQueue = require('./dlq');
 const Event = require('../models/Event');
 
@@ -32,6 +32,14 @@ reminderFireQueue.on('failed', async (job, err) => {
   logger.error(`Reminder fire job ${job.id} failed (attempt ${job.attemptsMade}/${job.opts.attempts}): ${err.message}`);
 
   if (job.attemptsMade >= job.opts.attempts) {
+    // Terminal: drive the reminder to 'failed' so it never lingers in 'firing'.
+    const reason = job.failedReason || err.message;
+    try {
+      await finalizeFailure(job.data?.reminderId, reason);
+    } catch (finalErr) {
+      logger.error(`Failed to finalize reminder failure for job ${job.id}: ${finalErr.message}`);
+    }
+
     try {
       await dlqQueue.add('dead', {
         originalQueue: reminderFireQueue.name,

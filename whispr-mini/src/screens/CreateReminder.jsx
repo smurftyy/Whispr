@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion as Motion } from 'framer-motion'
 import { CalendarDays, CheckCircle2, Clock3, Mic, Sparkles } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import { useCreateReminder, useExtractReminder, useReminders } from '../hooks/useReminders'
@@ -16,12 +16,10 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
 
   const [text, setText] = useState(() => editReminder?.originalMessage || '')
   const [isRecording, setIsRecording] = useState(false)
-  const [isVoiceAvailable, setIsVoiceAvailable] = useState(false)
+  const [isVoiceAvailable] = useState(
+    () => Boolean(window.SpeechRecognition || window.webkitSpeechRecognition),
+  )
   const recognitionRef = useRef(null)
-
-  useEffect(() => {
-    setIsVoiceAvailable(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition))
-  }, [])
 
   const {
     mutate: extractReminder,
@@ -151,7 +149,7 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
           />
 
           {isVoiceAvailable && (
-            <motion.button
+            <Motion.button
               type="button"
               aria-label={isRecording ? 'Stop recording' : 'Voice input'}
               onClick={toggleRecording}
@@ -165,7 +163,7 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
               }`}
             >
               <Mic size={20} />
-            </motion.button>
+            </Motion.button>
           )}
         </section>
 
@@ -221,7 +219,7 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
 
       <div className="fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-[#0d0d0d] via-[#0d0d0d]/85 to-transparent px-4 pb-safe pt-10 sm:px-6">
         <div className="mx-auto w-full max-w-2xl">
-          <motion.button
+          <Motion.button
             type="button"
             onClick={handleConfirm}
             disabled={!canConfirm}
@@ -232,7 +230,7 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
           >
             {isCreating ? 'Creating...' : 'Confirm Reminder'}
             <CheckCircle2 size={20} />
-          </motion.button>
+          </Motion.button>
         </div>
       </div>
     </div>

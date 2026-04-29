@@ -1,5 +1,6 @@
 // src/config/redis.js — Redis Client
 const Redis = require('ioredis');
+const env = require('./env');
 const logger = require('../utils/logger');
 
 /**
@@ -31,4 +32,6 @@ function createRedisClient(redisUrl) {
   return redis;
 }
 
-module.exports = { createRedisClient };
+const redis = createRedisClient(env.REDIS_URL);
+
+module.exports = { createRedisClient, redis };

@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { motion } from 'framer-motion'
+import { motion as Motion } from 'framer-motion'
 import { Archive, BookOpenText, Layers, Settings } from 'lucide-react'
 
 const items = [
@@ -41,7 +41,7 @@ function BottomNav({ activeTab, onNavigate }) {
           const active = activeTab === screen
 
           return (
-            <motion.button
+            <Motion.button
               key={key}
               type="button"
               onClick={() => handleTabClick(screen)}
@@ -54,7 +54,7 @@ function BottomNav({ activeTab, onNavigate }) {
             >
               {createElement(Icon, { size: 16, className: 'mb-1' })}
               {label}
-            </motion.button>
+            </Motion.button>
           )
         })}
       </div>

@@ -13,7 +13,7 @@ const mockSend = async (to, msg) => {
     console.log(`\n🤖 [Bot -> ${to}]:\n${msg}\n`);
 };
 
-schedulerService.scheduleReminder = async (reminder, user) => {
+schedulerService.scheduleReminder = async (reminder, _user) => {
     console.log('⏰ [Mock Scheduler] Scheduled reminder:', reminder._id);
     return 1;
 };

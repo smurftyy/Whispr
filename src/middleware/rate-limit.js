@@ -1,34 +1,32 @@
+const { RateLimiterRedis } = require('rate-limiter-flexible');
+const { redis } = require('../config/redis');
+const logger = require('../utils/logger');
+
 const WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS = 60;
 
-const buckets = new Map();
+const apiRateLimiter = new RateLimiterRedis({
+  storeClient: redis,
+  keyPrefix: 'rate_limit',
+  points: MAX_REQUESTS,
+  duration: WINDOW_MS / 1000,
+});
 
-function getClientIp(req) {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0].trim();
-  }
+async function apiRateLimit(req, res, next) {
+  const key = req.user?.id ? `user_${req.user.id}` : `ip_${req.ip}`;
 
-  return req.ip || req.socket?.remoteAddress || 'unknown';
-}
+  try {
+    await apiRateLimiter.consume(key);
+    return next();
+  } catch (error) {
+    if (typeof error?.msBeforeNext === 'number') {
+      res.set('Retry-After', Math.ceil(error.msBeforeNext / 1000).toString());
+      return res.status(429).json({ error: 'Too many requests' });
+    }
 
-function apiRateLimit(req, res, next) {
-  const key = getClientIp(req);
-  const now = Date.now();
-  const bucket = buckets.get(key);
-
-  if (!bucket || now >= bucket.resetAt) {
-    buckets.set(key, { count: 1, resetAt: now + WINDOW_MS });
+    logger.warn(`Rate limiter unavailable, allowing request: ${error?.message || 'unknown error'}`);
     return next();
   }
-
-  if (bucket.count >= MAX_REQUESTS) {
-    res.set('Retry-After', Math.ceil((bucket.resetAt - now) / 1000).toString());
-    return res.status(429).json({ error: 'Too many requests' });
-  }
-
-  bucket.count += 1;
-  return next();
 }
 
 module.exports = apiRateLimit;

@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+import { motion as Motion } from 'framer-motion'
 import { Settings, UserCircle2 } from 'lucide-react'
 import { getTelegramAvatar, getTelegramFirstName } from '../utils/telegram'
 
@@ -36,7 +36,7 @@ function TopBar({ onOpenSettings }) {
         </p>
 
         <div className="flex items-center gap-3">
-          <motion.button
+          <Motion.button
             type="button"
             aria-label="Settings"
             onClick={handleOpenSettings}
@@ -46,7 +46,7 @@ function TopBar({ onOpenSettings }) {
             className="rounded-full p-2 text-white/80 transition hover:bg-white/10 hover:text-white"
           >
             <Settings size={18} />
-          </motion.button>
+          </Motion.button>
 
           {avatar ? (
             <img

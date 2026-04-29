@@ -12,7 +12,7 @@ class MessagingProvider {
    * @param {string} message - Plain-text message body
    * @returns {Promise<{success: boolean, error?: string}>}
    */
-  async send(to, message, options = {}) {
+  async send(to, message, _options = {}) {
     throw new Error('MessagingProvider.send() must be implemented by subclass');
   }
 
@@ -20,7 +20,7 @@ class MessagingProvider {
    * Register a callback invoked on every inbound user message.
    * @param {(from: string, body: string, messageId: string) => void} callback
    */
-  onMessage(callback) {
+  onMessage(_callback) {
     throw new Error('MessagingProvider.onMessage() must be implemented by subclass');
   }
 }

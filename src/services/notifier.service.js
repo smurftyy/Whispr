@@ -70,7 +70,7 @@ class NotifierService {
 
     const message =
       `Hey ${displayName}! :)\n\n` +
-      `It\'s time to ${friendlyAction}.\n` +
+      `It's time to ${friendlyAction}.\n` +
       (friendlyNote ? `${friendlyNote}\n` : '') +
       `\nDue: ${timeStr}\n`;
 
@@ -173,5 +173,34 @@ async function processReminderFire(job) {
   }
 }
 
+/**
+ * Terminal failure helper — called from the queue's 'failed' handler after
+ * Bull has exhausted all retry attempts for a fire job. Uses raw updateOne
+ * (not the state-machine helper) so it succeeds regardless of current state
+ * and never leaves a reminder stuck in 'firing'.
+ */
+async function finalizeFailure(reminderId, reason) {
+  if (!reminderId) return;
+  try {
+    await Reminder.updateOne(
+      { _id: reminderId },
+      {
+        $set: {
+          status: REMINDER_STATUS.FAILED,
+          failureReason: reason,
+          failedAt: new Date(),
+        },
+      },
+    );
+    logger.info({ event: 'reminder_failed', reminderId, reason });
+  } catch (err) {
+    logger.error(
+      { err, reminderId, reason },
+      'finalizeFailure: failed to mark reminder as failed',
+    );
+  }
+}
+
 module.exports = _instance;
 module.exports.processReminderFire = processReminderFire;
+module.exports.finalizeFailure = finalizeFailure;

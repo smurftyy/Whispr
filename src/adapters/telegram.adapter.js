@@ -28,8 +28,9 @@ class TelegramAdapter extends MessagingProvider {
    * Safe to call multiple times — subsequent calls are no-ops.
    *
    * @param {string | null} webhookUrl - Full HTTPS URL for webhook mode; omit for polling
+   * @param {string | null} webhookSecret - Telegram webhook secret token for webhook mode
    */
-  async start(webhookUrl = null) {
+  async start(webhookUrl = null, webhookSecret = null) {
     if (this.bot) return;
     if (!this.token) {
       logger.error('TelegramAdapter: Missing bot token — adapter disabled');
@@ -40,7 +41,9 @@ class TelegramAdapter extends MessagingProvider {
       this.bot = new TelegramBot(this.token, { polling: false });
 
       if (webhookUrl) {
-        await this.bot.setWebHook(webhookUrl);
+        await this.bot.setWebHook(webhookUrl, {
+          secret_token: webhookSecret,
+        });
         logger.info('[BOOT] Telegram: webhook mode');
       } else {
         await this.bot.deleteWebHook();

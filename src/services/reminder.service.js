@@ -46,7 +46,7 @@ class ReminderService {
 
     let extracted;
     try {
-      extracted = await aiService.extractReminder(messageText);
+      extracted = await aiService.extractReminder(messageText, user);
     } catch (error) {
       // InvalidAIOutputError must reach the Bull worker for no-retry handling
       if (error instanceof InvalidAIOutputError) throw error;
@@ -125,7 +125,22 @@ class ReminderService {
       reminder.scheduledJobId = scheduled.scheduledJobId;
     } catch (error) {
       schedulingFailed = true;
-      logger.error(`Scheduling failed for reminder ${reminder._id}:`, error.message);
+      // Stamp a recoverable error on the reminder; it stays in 'parsed' for the
+      // repair sweep to pick up. Use atomic updateOne to avoid full-document
+      // validation triggered by reminder.save().
+      await Reminder.updateOne(
+        { _id: reminder._id },
+        { $set: { schedulingError: { message: error.message, at: new Date() } } },
+      ).catch((updateErr) => {
+        logger.error(
+          { err: updateErr, reminderId: reminder._id.toString() },
+          'Failed to persist schedulingError stamp',
+        );
+      });
+      logger.warn(
+        { reminderId: reminder._id.toString(), err: error.message },
+        'Scheduling failed — reminder left at parsed for repair sweep',
+      );
     }
 
     return { reminder, extracted, schedulingFailed };
