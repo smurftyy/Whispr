@@ -72,7 +72,7 @@ function ruleExtract(text, zone) {
     ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
     : 'Reminder';
 
-  const lower = text.toLowerCase();
+  const lower = normalized.toLowerCase();
   const recurrence =
     /\bevery day|daily\b/.test(lower) ? 'daily' :
     /\bevery week|weekly|every (mon|tue|wed|thu|fri|sat|sun)/.test(lower) ? 'weekly' :

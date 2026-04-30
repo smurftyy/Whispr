@@ -272,4 +272,4 @@ class SchedulerService {
 
 const _instance = new SchedulerService();
 module.exports = _instance;
-module.exports.runRepairSweep = () => _instance.runRepairSweep();
+
