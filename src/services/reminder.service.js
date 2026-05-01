@@ -21,6 +21,9 @@ const STRATEGY_TIMING_MAP = {
   [NOTIFICATION_STRATEGIES.THIRTY_MIN_BEFORE]: [30],
   [NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE]: [60],
   [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]: [1440],
+  'at_time': [0],
+  '5_mins_before': [5],
+  '30_mins_before': [30],
 };
 
 function normalizeExtracted(extracted) {
@@ -95,6 +98,7 @@ class ReminderService {
     const deadlineMs = new Date(extracted.eventTime).getTime();
     const firstOffsetMs = (notificationTiming[0] || 0) * 60 * 1000;
     const scheduledAt = new Date(deadlineMs - firstOffsetMs);
+    const fireAt = scheduledAt.getTime() < Date.now() ? new Date() : scheduledAt;
 
     // Create at 'parsed' — AI extraction has already succeeded at this point.
     const reminder = await Reminder.create({
@@ -109,12 +113,12 @@ class ReminderService {
       status: REMINDER_STATUS.PARSED,
       frequency: extracted.recurrence || REMINDER_FREQUENCY.NONE,
       notificationTiming,
-      scheduledAt,
+      scheduledAt: fireAt,
     });
 
     let schedulingFailed = false;
     try {
-      const delay = Math.max(0, scheduledAt.getTime() - Date.now());
+      const delay = Math.max(0, fireAt.getTime() - Date.now());
       const job = await reminderFireQueue.add(
         'fire',
         { reminderId: reminder._id.toString() },

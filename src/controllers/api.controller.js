@@ -27,7 +27,7 @@ class ApiController {
     }
 
     try {
-      const extracted = await aiService.extractReminder(text.trim());
+      const extracted = await aiService.extractReminder(text.trim(), req.user);
       return res.json({ extracted });
     } catch (error) {
       logger.error('API extract error:', error.message);

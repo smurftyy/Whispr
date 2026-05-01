@@ -39,6 +39,9 @@ const STRATEGY_LABELS = {
   [NOTIFICATION_STRATEGIES.THIRTY_MIN_BEFORE]: '30 mins before',
   [NOTIFICATION_STRATEGIES.ONE_HOUR_BEFORE]:   '1 hour before',
   [NOTIFICATION_STRATEGIES.ONE_DAY_BEFORE]:    '1 day before',
+  'at_time':        'at the due time',
+  '5_mins_before':  '5 mins before',
+  '30_mins_before': '30 mins before',
 };
 
 /**

@@ -18,3 +18,5 @@ Thumbs.db
 # Test artifacts
 coverage/
 .env
+
+src/__tests__/
