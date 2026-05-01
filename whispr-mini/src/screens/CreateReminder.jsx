@@ -197,11 +197,11 @@ function CreateReminder({ onNavigateDashboard, editReminderId }) {
                   <div className="mt-5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center gap-2 rounded-xl bg-[#232323] px-3 py-2 text-sm text-white/90">
                       <CalendarDays size={16} className="text-white/65" />
-                      {formatReminderDate(extractedDate || extracted.eventTime)}
+                      {formatReminderDate(extracted.eventTime, 'UTC')}
                     </span>
                     <span className="inline-flex items-center gap-2 rounded-xl bg-[#232323] px-3 py-2 text-sm text-white/90">
                       <Clock3 size={16} className="text-white/65" />
-                      {formatReminderTime(extractedDate || extracted.eventTime)}
+                      {formatReminderTime(extracted.eventTime, 'UTC')}
                     </span>
                   </div>
                 </div>

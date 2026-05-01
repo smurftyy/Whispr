@@ -90,7 +90,7 @@ export function getReminderSubtitle(reminder) {
   return `${formatReminderDate(dueDate)} at ${formatReminderTime(dueDate)}`
 }
 
-export function formatReminderDate(input) {
+export function formatReminderDate(input, timeZone) {
   const date = input instanceof Date ? input : parseDate(input)
   if (!date) return '--'
 
@@ -98,16 +98,18 @@ export function formatReminderDate(input) {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    ...(timeZone ? { timeZone } : {}),
   })
 }
 
-export function formatReminderTime(input) {
+export function formatReminderTime(input, timeZone) {
   const date = input instanceof Date ? input : parseDate(input)
   if (!date) return '--'
 
   return date.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
+    ...(timeZone ? { timeZone } : {}),
   })
 }
 
