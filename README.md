@@ -11,7 +11,7 @@ Say "remind me to submit my assignment tomorrow at 11pm" and Whispr parses it, s
 
 **Bot:** [t.me/WhisprBot](https://t.me/WhisprBot)  
 **Mini App:** [whispr-mini.vercel.app](https://whispr-mini.vercel.app)  
-**Product demo (interactive story):** [whispr-mini.vercel.app/demo](https://whispr-mini.vercel.app/demo)
+**Product demo (interactive story):** [whispr-mini.vercel.app](https://whispr-mini.vercel.app)
 
 ---
 
