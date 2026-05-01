@@ -6,10 +6,6 @@ const configuredOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 const ALLOWED_ORIGINS = new Set(configuredOrigins);
 
-// Log at startup so you can verify the value Render actually loaded
-const logger = require('../utils/logger');
-logger.info({ allowedOrigins: [...ALLOWED_ORIGINS] }, 'CORS: allowed origins loaded');
-
 function miniAppCors(req, res, next) {
   const origin = req.headers.origin;
   const allowAllOrigins = ALLOWED_ORIGINS.has('*');

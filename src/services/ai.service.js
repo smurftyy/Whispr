@@ -56,9 +56,18 @@ function ruleExtract(text, zone) {
     return { intent: 'unrecognized', raw: text };
   }
   const eventTime = parsed[0].start.date();
+  const deltaMs = eventTime - new Date();
+  const deltaMin = deltaMs / 60000;
+
+  const suggestedNotificationStrategy =
+    deltaMin <= 10  ? 'at_time' :
+    deltaMin <= 60  ? '5_mins_before' :
+    deltaMin <= 360 ? '30_mins_before' :
+                      '1_hour_before';
 
   const cleaned = normalized
     .replace(parsed[0].text, '')
+    .replace(/\s+in\s*$/i, '')
     // Strip common opener phrases
     .replace(/^(hey,?\s*)?(please\s*)?(can you\s*)?remind me( to| that| about)?/i, '')
     .replace(/^(don'?t forget( to| that| about)?|make sure (i|to)|ping me( about)?|alert me( when| about)?)/i, '')
@@ -66,6 +75,7 @@ function ruleExtract(text, zone) {
     .trim()
     .replace(/\s+(in|on|at|by|every|this|next|the|a|an|and|or|to|for)$/i, '')
     .replace(/^(in|on|at|by|every|this|next|the|a|an|and|or|to|for)\s+/i, '')
+    .split(' ').slice(0, 5).join(' ')
     .trim()
     .replace(/\s+/g, ' ');
   const task = cleaned
@@ -98,7 +108,7 @@ function ruleExtract(text, zone) {
     task,
     eventTime: eventTime.toISOString(),
     urgency,
-    suggestedNotificationStrategy: '1_hour_before',
+    suggestedNotificationStrategy,
     type,
   };
 }
