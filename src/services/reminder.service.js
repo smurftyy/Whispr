@@ -186,6 +186,10 @@ class ReminderService {
             REMINDER_STATUS.PENDING,
             REMINDER_STATUS.PARSED,
             REMINDER_STATUS.SCHEDULED,
+            REMINDER_STATUS.FIRING,
+            REMINDER_STATUS.FIRED,
+            REMINDER_STATUS.COMPLETED,
+            REMINDER_STATUS.FAILED,
           ],
         },
       });
